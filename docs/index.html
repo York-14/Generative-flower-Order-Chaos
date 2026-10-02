@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Flower — Order × Chaos</title>
+<meta name="description" content="対称カオス写像が描く花を、形の地図と美しさの評価関数 Beauty = Order × Complexity × Contrast で解析する。">
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1c1b22; --muted: #5d5a68;
+  --border: #e4e1da; --accent: #b4366b; --code-bg: #f2efe9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+    --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+  --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.75 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+main { max-width: 920px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 1.35rem; margin: 56px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+p, li { color: var(--text); }
+.lead { color: var(--muted); font-size: 1.05rem; margin: 0 0 24px; }
+a { color: var(--accent); }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+.formula {
+  text-align: center; font-size: clamp(1rem, 3.4vw, 1.35rem); padding: 18px 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin: 16px 0;
+  font-family: "Times New Roman", serif; font-style: italic; overflow-x: auto;
+}
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .studio { grid-template-columns: 1fr; } }
+.canvas-wrap { background: #0b0b10; border-radius: 12px; overflow: hidden; aspect-ratio: 1; position: relative; }
+canvas { width: 100%; height: 100%; display: block; }
+#status { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: #9b98a8; font-family: ui-monospace, monospace; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.panel label { display: grid; grid-template-columns: 54px 1fr 58px; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
+.panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.panel output { font-family: ui-monospace, monospace; font-size: 12px; text-align: right; color: var(--muted); }
+.panel select, .panel button {
+  width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; margin-top: 8px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+}
+.panel button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0; display: block; overflow-x: auto; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 16px 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.card h3 { margin: 0 0 6px; }
+.card p { margin: 0; font-size: 14px; color: var(--muted); }
+footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Generative Flower — Order × Chaos</h1>
+  <p class="lead">対称カオス写像が描く「花」を大量に探索し、回転・鏡映不変な<strong>形の地図</strong>を作り、
+  <strong>秩序（Order）・複雑さ（Complexity）・図と地（Contrast）</strong>の積として美しさを測る試み。</p>
+
+  <h2>Symmetric Icon を描く</h2>
+  <p>Field &amp; Golubitsky の対称カオス写像（複素平面）：</p>
+  <div class="formula">z<sub>t+1</sub> = ( λ + α|z|² + β Re(z<sup>n</sup>) + iω ) z + γ z̄<sup>n−1</sup></div>
+  <p>この写像は <em>n</em> 回の回転対称を持ち（ω = 0 なら鏡映も加わる）、軌道を長時間重ねると対称な花の模様が現れます。
+  下のパラメータを動かすか「ランダム探索」で、新しい花を探してみてください。</p>
+
+  <div class="studio">
+    <div class="canvas-wrap"><canvas id="cv" width="720" height="720"></canvas><div id="status"></div></div>
+    <div class="panel" id="panel">
+      <select id="preset" aria-label="プリセット"></select>
+      <div id="sliders"></div>
+      <button id="random" class="primary">ランダム探索</button>
+      <button id="save">PNG で保存</button>
+    </div>
+  </div>
+
+  <h2>パイプライン（shape_map.py）</h2>
+  <div class="cards">
+    <div class="card"><h3>1. 形状特徴</h3><p>サムネイルを極座標に再標本化し、半径ごとに角度方向の |FFT| を取る。振幅は回転・鏡映で変わらない。</p></div>
+    <div class="card"><h3>2. 形の地図</h3><p>標準化 → PCA → UMAP（無ければ t-SNE）で 2 次元へ。HDBSCAN でクラスタ分け。</p></div>
+    <div class="card"><h3>3. 美しさ</h3><p>Order × Complexity × Contrast の幾何平均型スコア。中庸を好む逆 U 字（Wundt 曲線）。</p></div>
+    <div class="card"><h3>4. 較正</h3><p>人間の一対比較から Bradley–Terry モデルで重み w<sub>O</sub>, w<sub>C</sub>, w<sub>K</sub> を推定。</p></div>
+  </div>
+
+  <h3>2 つの地図モード</h3>
+  <table>
+    <tr><th>モード</th><th>使う周波数</th><th>何が近くに並ぶか</th></tr>
+    <tr><td><code>full</code></td><td>m = 1 … 48</td><td>対称次数 n も形の一部。まず「何回対称か」で分かれ、その中で形が並ぶ。</td></tr>
+    <tr><td><code>petal</code></td><td>m = k, 2k, …, 10k</td><td>対称性を割り算し、花びら 1 枚の描き方だけを比べる。5 回対称と 8 回対称の花でも近くに来る。</td></tr>
+  </table>
+
+  <h2>美しさの評価関数</h2>
+  <div class="formula">Beauty = Order<sup>w<sub>O</sub></sup> × Complexity<sup>w<sub>C</sub></sup> × Contrast<sup>w<sub>K</sub></sup></div>
+  <table>
+    <tr><th>成分</th><th>要素</th><th>考え方</th></tr>
+    <tr><td><strong>Order</strong></td><td>回転次数 k（log k 上の釣鐘、中心 6）<br>鏡映スコア（最大 +35%）<br>角度コントラスト</td><td>4〜10 回対称を好む。円環に近い（ほぼ円対称）ものや直線・スポーク状のものは減点。</td></tr>
+    <tr><td><strong>Complexity</strong></td><td>ボックス次元 D（中心 1.72）<br>Lyapunov 指数 λ₁（中心 0.35）</td><td>線（D=1）でも塗りつぶし（D=2）でもない、弱すぎず強すぎないカオス。</td></tr>
+    <tr><td><strong>Contrast</strong></td><td>輪郭の鋭さ / 余白率（中心 0.45）<br>もや・孤立点ノイズの少なさ</td><td>図と地がはっきりし、適度な余白があること。</td></tr>
+  </table>
+  <p>一対比較 (i が j に勝った) の集合から、効用 u = w<sub>O</sub> log O + w<sub>C</sub> log C + w<sub>K</sub> log K として
+  P(i ≻ j) = σ(u<sub>i</sub> − u<sub>j</sub>) を切片なしロジスティック回帰で推定します。</p>
+
+  <h2>使い方</h2>
+<pre><code>pip install -r requirements.txt
+python shape_map.py --run out/run1                 # 全形の地図 + 美しさ
+python shape_map.py --run out/run1 --mode petal    # 花びら地図</code></pre>
+  <p>入力は <code>symmetric_icons.py</code> の出力（<code>catalog.csv</code> と <code>thumbs.npy</code>）。
+  出力は <code>shape_map.png</code>, <code>clusters.png</code>, <code>cluster_gallery.png</code>, <code>beauty_top.png</code>,
+  <code>wundt_check.png</code>, <code>map.npz</code>, <code>catalog_scored.csv</code>。</p>
+
+  <footer>Source: <a href="https://github.com/york-14/generative-flower-order-chaos">github.com/york-14/generative-flower-order-chaos</a></footer>
+</main>
+
+<script>
+(() => {
+  const PARAMS = [
+    ["n", 3, 12, 1], ["lam", -3, 3, 0.001], ["alpha", -6, 6, 0.001],
+    ["beta", -2, 2, 0.001], ["gamma", -1.5, 1.5, 0.001], ["omega", -0.5, 0.5, 0.001],
+  ];
+  const PRESETS = [
+    ["Emperor's Cloak", { lam: -2.08, alpha: 1.0, beta: -0.1, gamma: 0.167, omega: 0, n: 7 }],
+    ["Clam Triple", { lam: 1.56, alpha: -1.0, beta: 0.1, gamma: -0.82, omega: 0.12, n: 3 }],
+    ["Pentagon", { lam: -1.806, alpha: 1.806, beta: 0, gamma: 1.0, omega: 0, n: 5 }],
+    ["Starfish", { lam: -2.34, alpha: 2.0, beta: 0.2, gamma: 0.1, omega: 0, n: 5 }],
+    ["Sand Dollar", { lam: -2.7, alpha: 5.0, beta: 1.5, gamma: 1.0, omega: 0, n: 6 }],
+    ["Fish", { lam: -2.5, alpha: 5.0, beta: -1.9, gamma: 1.0, omega: 0.188, n: 5 }],
+  ];
+  const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  const W = cv.width, statusEl = document.getElementById("status");
+  const sliders = document.getElementById("sliders"), presetSel = document.getElementById("preset");
+  const p = { ...PRESETS[0][1] };
+  const inputs = {};
+
+  for (const [k, lo, hi, st] of PARAMS) {
+    const lab = document.createElement("label");
+    lab.innerHTML = `<span>${k === "lam" ? "λ" : k === "alpha" ? "α" : k === "beta" ? "β" : k === "gamma" ? "γ" : k === "omega" ? "ω" : "n"}</span>`;
+    const inp = Object.assign(document.createElement("input"), { type: "range", min: lo, max: hi, step: st });
+    const out = document.createElement("output");
+    inp.addEventListener("input", () => { p[k] = +inp.value; out.textContent = (+inp.value).toFixed(k === "n" ? 0 : 3); presetSel.value = ""; schedule(); });
+    lab.append(inp, out); sliders.append(lab); inputs[k] = [inp, out];
+  }
+  presetSel.append(new Option("— プリセット —", ""));
+  PRESETS.forEach(([name], i) => presetSel.append(new Option(name, i)));
+  presetSel.addEventListener("change", () => { if (presetSel.value !== "") { Object.assign(p, PRESETS[+presetSel.value][1]); sync(); schedule(); } });
+  function sync() { for (const k in inputs) { inputs[k][0].value = p[k]; inputs[k][1].textContent = (+p[k]).toFixed(k === "n" ? 0 : 3); } }
+
+  // magma 風カラーマップ
+  const STOPS = [[0, 0, 0, 4], [0.25, 81, 18, 124], [0.5, 183, 55, 121], [0.75, 252, 137, 97], [1, 252, 253, 191]];
+  const LUT = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255; let j = 0; while (j < STOPS.length - 2 && t > STOPS[j + 1][0]) j++;
+    const [a, b] = [STOPS[j], STOPS[j + 1]], f = (t - a[0]) / (b[0] - a[0]);
+    for (let c = 0; c < 3; c++) LUT[i * 3 + c] = a[c + 1] + f * (b[c + 1] - a[c + 1]);
+  }
+
+  function step(x, y, q) {
+    const zz = x * x + y * y;
+    let zr = x, zi = y;                         // z^(n-1)
+    for (let i = 1; i < q.n - 1; i++) { const t = zr * x - zi * y; zi = zr * y + zi * x; zr = t; }
+    const ren = zr * x - zi * y;                // Re(z^n)
+    const p_ = q.lam + q.alpha * zz + q.beta * ren;
+    return [p_ * x - q.omega * y + q.gamma * zr, p_ * y + q.omega * x - q.gamma * zi];
+  }
+
+  // 境界を推定して発散を検出
+  function probe(q, N = 20000) {
+    let x = 0.01, y = 0.003, R = 0;
+    for (let i = 0; i < N; i++) {
+      [x, y] = step(x, y, q);
+      if (!isFinite(x) || Math.abs(x) + Math.abs(y) > 1e4) return null;
+      if (i > 1000) R = Math.max(R, Math.hypot(x, y));
+    }
+    return R > 1e-6 ? { R, x, y } : null;
+  }
+
+  let job = 0, timer = null;
+  function schedule() { clearTimeout(timer); timer = setTimeout(render, 40); }
+
+  function render() {
+    const id = ++job, q = { ...p, n: Math.round(p.n) };
+    const pr = probe(q);
+    ctx.fillStyle = "#0b0b10"; ctx.fillRect(0, 0, W, W);
+    if (!pr) { statusEl.textContent = "diverged / fixed point"; return false; }
+    const hist = new Float32Array(W * W), img = ctx.createImageData(W, W);
+    const scale = (W / 2 - 8) / (pr.R * 1.02);
+    let x = pr.x, y = pr.y, total = 0, max = 1;
+    const TOTAL = 3_000_000, CHUNK = 300_000;
+    function chunk() {
+      if (id !== job) return;
+      for (let i = 0; i < CHUNK; i++) {
+        [x, y] = step(x, y, q);
+        const px = (W / 2 + x * scale) | 0, py = (W / 2 - y * scale) | 0;
+        if (px >= 0 && px < W && py >= 0 && py < W) { const v = ++hist[py * W + px]; if (v > max) max = v; }
+      }
+      total += CHUNK;
+      const lm = Math.log1p(max), d = img.data;
+      for (let i = 0; i < hist.length; i++) {
+        const t = hist[i] ? Math.min(255, (Math.log1p(hist[i]) / lm) ** 0.8 * 255) | 0 : 0;
+        d[i * 4] = LUT[t * 3]; d[i * 4 + 1] = LUT[t * 3 + 1]; d[i * 4 + 2] = LUT[t * 3 + 2]; d[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      statusEl.textContent = `n=${q.n}  ${(total / 1e6).toFixed(1)}M pts`;
+      if (total < TOTAL) requestAnimationFrame(chunk);
+    }
+    chunk();
+    return true;
+  }
+
+  // ランダム探索：発散せず、外接円内を適度に埋め、ボックス次元が中庸（線でも面でもない）なものを探す
+  function boxStats(q, pr) {
+    const cells = G => {
+      const seen = new Uint8Array(G * G); let x = pr.x, y = pr.y, cnt = 0;
+      for (let i = 0; i < 60000; i++) {
+        [x, y] = step(x, y, q);
+        const gx = ((x / pr.R) * 0.5 + 0.5) * (G - 1) | 0, gy = ((y / pr.R) * 0.5 + 0.5) * (G - 1) | 0;
+        if (gx >= 0 && gx < G && gy >= 0 && gy < G && !seen[gy * G + gx]) { seen[gy * G + gx] = 1; cnt++; }
+      }
+      return cnt;
+    };
+    const c32 = cells(32), c64 = cells(64);
+    return { D: Math.log2(c64 / c32), fill: c64 / (Math.PI * 32 * 32) };
+  }
+  document.getElementById("random").addEventListener("click", () => {
+    const r = (lo, hi) => lo + Math.random() * (hi - lo);
+    for (let t = 0; t < 1500; t++) {
+      const q = { n: 3 + Math.floor(Math.random() * 8), lam: r(-2.8, 2.8), alpha: r(-5, 5), beta: r(-1.5, 1.5),
+                  gamma: r(-1.2, 1.2), omega: Math.random() < 0.5 ? 0 : r(-0.3, 0.3) };
+      const pr = probe(q);
+      if (!pr) continue;
+      const { D, fill } = boxStats(q, pr);
+      if (D > 1.45 && D < 1.9 && fill > 0.15 && fill < 0.7) { Object.assign(p, q); presetSel.value = ""; sync(); render(); return; }
+    }
+    statusEl.textContent = "見つかりませんでした。もう一度どうぞ";
+  });
+  document.getElementById("save").addEventListener("click", () => {
+    const a = document.createElement("a"); a.download = `icon_n${Math.round(p.n)}.png`; a.href = cv.toDataURL(); a.click();
+  });
+
+  presetSel.value = "0"; sync(); render();
+})();
+</script>
+</body>
+</html>
