@@ -1,0 +1,4 @@
+numpy
+scikit-learn>=1.3   # sklearn.cluster.HDBSCAN
+matplotlib
+umap-learn           # 任意（無ければ t-SNE にフォールバック）
