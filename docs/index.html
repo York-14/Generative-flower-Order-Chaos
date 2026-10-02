@@ -21,6 +21,7 @@
   --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.75 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
@@ -62,6 +63,32 @@ th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
 .card h3 { margin: 0 0 6px; }
 .card p { margin: 0; font-size: 14px; color: var(--muted); }
+.panel h4 { margin: 14px 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+.panel h4:first-child { margin-top: 0; }
+.panel .colors { display: flex; gap: 8px; margin-top: 8px; }
+.panel .colors label { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0; font-size: 11px; color: var(--muted); flex: 1; }
+.panel input[type=color] { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--bg); cursor: pointer; }
+#swatch { height: 12px; border-radius: 6px; margin-top: 10px; border: 1px solid var(--border); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pair .canvas-wrap { cursor: pointer; outline: 3px solid transparent; outline-offset: -3px; transition: outline-color .15s; }
+.pair .canvas-wrap:hover, .pair .canvas-wrap:focus-visible { outline-color: var(--accent); }
+.pair .tag { position: absolute; left: 10px; top: 8px; font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px #000; }
+.choice { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; margin-top: 12px; }
+.btn {
+  font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.learn-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
+.learn-meta .count { color: var(--muted); font-size: 14px; margin-right: auto; }
+.bars { margin-top: 14px; display: grid; gap: 4px; font-size: 13px; }
+.bar { display: grid; grid-template-columns: minmax(0, 11em) 1fr 3.5em; gap: 10px; align-items: center; }
+.bar .track { position: relative; height: 10px; background: var(--code-bg); border-radius: 5px; }
+.bar .track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); opacity: .5; }
+.bar .fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.bar .val { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); text-align: right; }
+.hint { font-size: 13px; color: var(--muted); }
 footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
@@ -84,8 +111,41 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       <div id="sliders"></div>
       <button id="random" class="primary">ランダム探索</button>
       <button id="save">PNG で保存</button>
+      <h4 style="margin-top:18px">色彩</h4>
+      <select id="palette" aria-label="パレット"></select>
+      <div class="colors" id="customColors" hidden>
+        <label>暗部<input type="color" id="c1" value="#1a0b3d"></label>
+        <label>中間<input type="color" id="c2" value="#d0457a"></label>
+        <label>明部<input type="color" id="c3" value="#fff3c4"></label>
+      </div>
+      <div id="colorSliders"></div>
+      <div class="colors"><label>背景<input type="color" id="bg" value="#0b0b10"></label></div>
+      <div id="swatch"></div>
+      <button id="resetColor">色をリセット</button>
     </div>
   </div>
+
+  <h2>好みを学習する</h2>
+  <p>2 つの花のうち、好きな方をクリック（キーボードは ← / →）。選ぶたびに、このブラウザの中だけで
+  あなたの好みのモデル（Bradley–Terry）を更新し、次に出す候補もあなた好みに寄っていきます。
+  学習データはこの端末のブラウザ（localStorage）に保存され、どこにも送信されません。</p>
+  <div class="pair">
+    <div class="canvas-wrap" id="wrapA" tabindex="0" role="button" aria-label="A を選ぶ"><canvas id="cvA" width="400" height="400"></canvas><span class="tag">A</span></div>
+    <div class="canvas-wrap" id="wrapB" tabindex="0" role="button" aria-label="B を選ぶ"><canvas id="cvB" width="400" height="400"></canvas><span class="tag">B</span></div>
+  </div>
+  <div class="choice">
+    <button class="btn" id="pickA">← A が好き</button>
+    <button class="btn" id="pickNone">どちらでもない</button>
+    <button class="btn" id="pickB">B が好き →</button>
+  </div>
+  <div class="learn-meta">
+    <span class="count" id="learnCount"></span>
+    <button class="btn primary" id="recommend">あなた好みの花を描く</button>
+    <button class="btn" id="resetLearn">学習をリセット</button>
+  </div>
+  <div class="bars" id="bars"></div>
+  <p class="hint">バーは初期の評価関数からどれだけ好みがずれたかを示します（右 = 好き、左 = 苦手）。
+  色彩の設定もこのブラウザに保存されます。</p>
 
   <h2>パイプライン（shape_map.py）</h2>
   <div class="cards">
@@ -112,6 +172,11 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   </table>
   <p>一対比較 (i が j に勝った) の集合から、効用 u = w<sub>O</sub> log O + w<sub>C</sub> log C + w<sub>K</sub> log K として
   P(i ≻ j) = σ(u<sub>i</sub> − u<sub>j</sub>) を切片なしロジスティック回帰で推定します。</p>
+  <p>このページの「好みを学習する」は同じ考え方をブラウザ内で行います。効用を
+  u = w<sub>O</sub> log O + w<sub>C</sub> log C + w<sub>K</sub> log K + Σ v<sub>j</sub> φ<sub>j</sub>
+  （φ = 対称数・次元・カオスの強さ・余白などの 1 次・2 次項）とし、初期の評価関数（w = 1, v = 0）を事前分布とする
+  L2 正則化付きロジスティック回帰で、選択のたびに全データから再推定します。
+  ブラウザ版の O・C・K は軌道のヒストグラムから近似計算した値です。</p>
 
   <h2>使い方</h2>
 <pre><code>pip install -r requirements.txt
@@ -126,10 +191,136 @@ python shape_map.py --run out/run1 --mode petal    # 花びら地図</code></pre
 
 <script>
 (() => {
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  // ==================================================================================
+  // 写像
+  // ==================================================================================
+  let NX = 0, NY = 0;
+  function step(q, x, y) {
+    const zz = x * x + y * y;
+    let zr = x, zi = y;                         // z^(n-1)
+    for (let i = 1; i < q.n - 1; i++) { const t = zr * x - zi * y; zi = zr * y + zi * x; zr = t; }
+    const ren = zr * x - zi * y;                // Re(z^n)
+    const p = q.lam + q.alpha * zz + q.beta * ren;
+    NX = p * x - q.omega * y + q.gamma * zr;
+    NY = p * y + q.omega * x - q.gamma * zi;
+  }
+
+  // 過渡を捨てて境界半径を推定。発散・固定点なら null
+  function probe(q, N = 20000) {
+    let x = 0.01, y = 0.003, R = 0;
+    for (let i = 0; i < N; i++) {
+      step(q, x, y); x = NX; y = NY;
+      if (!(Math.abs(x) + Math.abs(y) < 1e4)) return null;
+      if (i > 1000) { const r = x * x + y * y; if (r > R) R = r; }
+    }
+    R = Math.sqrt(R);
+    return R > 1e-6 ? { R, x, y } : null;
+  }
+
+  // ==================================================================================
+  // 色彩
+  // ==================================================================================
+  const PALETTES = {
+    magma:   ["マグマ", [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]]],
+    inferno: ["インフェルノ", [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]]],
+    viridis: ["ビリディス", [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]]],
+    ocean:   ["氷・海", [[2, 6, 20], [10, 40, 90], [30, 110, 170], [120, 200, 230], [240, 252, 255]]],
+    sakura:  ["桜", [[10, 4, 10], [90, 30, 70], [200, 90, 140], [250, 170, 200], [255, 240, 245]]],
+    gold:    ["金箔", [[8, 5, 0], [80, 45, 5], [170, 110, 20], [235, 190, 80], [255, 250, 220]]],
+    emerald: ["翡翠", [[0, 8, 6], [5, 60, 45], [20, 140, 100], [110, 220, 170], [235, 255, 245]]],
+    mono:    ["モノクロ", [[0, 0, 0], [64, 64, 64], [128, 128, 128], [192, 192, 192], [255, 255, 255]]],
+    ink:     ["墨（白背景向け）", [[255, 255, 255], [180, 180, 190], [110, 110, 125], [50, 50, 60], [0, 0, 0]]],
+    custom:  ["カスタム（3 色）", null],
+  };
+  const COLOR_DEFAULT = { palette: "magma", c1: "#1a0b3d", c2: "#d0457a", c3: "#fff3c4",
+                          hue: 0, gamma: 0.8, exposure: 1, bg: "#0b0b10" };
+  const color = { ...COLOR_DEFAULT, ...(store.get("gfoc.color.v1") || {}) };
+  const COLOR_SLIDERS = [["hue", "色相", -180, 180, 1, 0], ["gamma", "ガンマ", 0.3, 2, 0.01, 2],
+                         ["exposure", "露出", 0.4, 3, 0.01, 2]];
+  const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  let LUT = new Uint8ClampedArray(256 * 3), BG = [11, 11, 16];
+
+  function buildLUT() {
+    const stops = color.palette === "custom"
+      ? [hex2rgb(color.c1), hex2rgb(color.c2), hex2rgb(color.c3)] : PALETTES[color.palette][1];
+    const a = Math.cos(color.hue * Math.PI / 180), b = Math.sin(color.hue * Math.PI / 180);
+    const M = [.213 + .787 * a - .213 * b, .715 - .715 * a - .715 * b, .072 - .072 * a + .928 * b,
+               .213 - .213 * a + .143 * b, .715 + .285 * a + .140 * b, .072 - .072 * a - .283 * b,
+               .213 - .213 * a - .787 * b, .715 - .715 * a + .715 * b, .072 + .928 * a + .072 * b];
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255 * (stops.length - 1), j = Math.min(stops.length - 2, Math.floor(t)), f = t - j;
+      const c = [0, 1, 2].map(k => stops[j][k] + f * (stops[j + 1][k] - stops[j][k]));
+      for (let k = 0; k < 3; k++) LUT[i * 3 + k] = M[k * 3] * c[0] + M[k * 3 + 1] * c[1] + M[k * 3 + 2] * c[2];
+    }
+    BG = hex2rgb(color.bg);
+    const g = [];
+    for (let i = 0; i <= 8; i++) { const k = Math.round(i / 8 * 255) * 3; g.push(`rgb(${LUT[k]},${LUT[k + 1]},${LUT[k + 2]}) ${i * 12.5}%`); }
+    $("swatch").style.background = `linear-gradient(90deg, ${g.join(",")})`;
+  }
+
+  // ==================================================================================
+  // 描画（ヒストグラムを保持して、色変更は再計算なしで塗り直す）
+  // ==================================================================================
+  const renderers = [];
+  function makeRenderer(canvas, statusEl) {
+    const W = canvas.width, ctx = canvas.getContext("2d");
+    const hist = new Float32Array(W * W), img = ctx.createImageData(W, W);
+    let max = 1, job = 0;
+    function paint() {
+      const lm = Math.log1p(max), d = img.data, g = color.gamma, ex = color.exposure;
+      canvas.parentElement.style.background = color.bg;
+      for (let i = 0; i < hist.length; i++) {
+        let r = BG[0], gg = BG[1], b = BG[2];
+        if (hist[i]) {
+          const v = Math.min(1, Math.pow(Math.log1p(hist[i]) / lm, g) * ex), t = (v * 255) | 0;
+          const al = Math.min(1, v * 2.5);
+          r += (LUT[t * 3] - r) * al; gg += (LUT[t * 3 + 1] - gg) * al; b += (LUT[t * 3 + 2] - b) * al;
+        }
+        d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+    function render(q, total = 3e6, pr = probe(q)) {
+      const id = ++job;
+      hist.fill(0); max = 1;
+      if (!pr) { paint(); if (statusEl) statusEl.textContent = "diverged / fixed point"; return false; }
+      const scale = (W / 2 - W / 90) / (pr.R * 1.02);
+      let x = pr.x, y = pr.y, done = 0;
+      const CHUNK = Math.min(300000, total);
+      (function chunk() {
+        if (id !== job) return;
+        for (let i = 0; i < CHUNK; i++) {
+          step(q, x, y); x = NX; y = NY;
+          const px = (W / 2 + x * scale) | 0, py = (W / 2 - y * scale) | 0;
+          if (px >= 0 && px < W && py >= 0 && py < W) { const v = ++hist[py * W + px]; if (v > max) max = v; }
+        }
+        done += CHUNK;
+        paint();
+        if (statusEl) statusEl.textContent = `n=${q.n}  ${(done / 1e6).toFixed(1)}M pts`;
+        if (done < total) requestAnimationFrame(chunk);
+      })();
+      return true;
+    }
+    const r = { render, paint };
+    renderers.push(r);
+    return r;
+  }
+
+  // ==================================================================================
+  // スタジオ（パラメータ・プリセット・色彩 UI）
+  // ==================================================================================
   const PARAMS = [
     ["n", 3, 12, 1], ["lam", -3, 3, 0.001], ["alpha", -6, 6, 0.001],
     ["beta", -2, 2, 0.001], ["gamma", -1.5, 1.5, 0.001], ["omega", -0.5, 0.5, 0.001],
   ];
+  const SYM = { n: "n", lam: "λ", alpha: "α", beta: "β", gamma: "γ", omega: "ω" };
   const PRESETS = [
     ["Emperor's Cloak", { lam: -2.08, alpha: 1.0, beta: -0.1, gamma: 0.167, omega: 0, n: 7 }],
     ["Clam Triple", { lam: 1.56, alpha: -1.0, beta: 0.1, gamma: -0.82, omega: 0.12, n: 3 }],
@@ -138,118 +329,267 @@ python shape_map.py --run out/run1 --mode petal    # 花びら地図</code></pre
     ["Sand Dollar", { lam: -2.7, alpha: 5.0, beta: 1.5, gamma: 1.0, omega: 0, n: 6 }],
     ["Fish", { lam: -2.5, alpha: 5.0, beta: -1.9, gamma: 1.0, omega: 0.188, n: 5 }],
   ];
-  const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-  const W = cv.width, statusEl = document.getElementById("status");
-  const sliders = document.getElementById("sliders"), presetSel = document.getElementById("preset");
+  const statusEl = $("status"), presetSel = $("preset");
+  const main = makeRenderer($("cv"), statusEl);
   const p = { ...PRESETS[0][1] };
   const inputs = {};
 
-  for (const [k, lo, hi, st] of PARAMS) {
+  function slider(parent, label, lo, hi, st, digits, get, set) {
     const lab = document.createElement("label");
-    lab.innerHTML = `<span>${k === "lam" ? "λ" : k === "alpha" ? "α" : k === "beta" ? "β" : k === "gamma" ? "γ" : k === "omega" ? "ω" : "n"}</span>`;
+    lab.innerHTML = `<span>${label}</span>`;
     const inp = Object.assign(document.createElement("input"), { type: "range", min: lo, max: hi, step: st });
     const out = document.createElement("output");
-    inp.addEventListener("input", () => { p[k] = +inp.value; out.textContent = (+inp.value).toFixed(k === "n" ? 0 : 3); presetSel.value = ""; schedule(); });
-    lab.append(inp, out); sliders.append(lab); inputs[k] = [inp, out];
+    const show = () => { inp.value = get(); out.textContent = (+get()).toFixed(digits); };
+    inp.addEventListener("input", () => { set(+inp.value); out.textContent = (+inp.value).toFixed(digits); });
+    lab.append(inp, out); parent.append(lab); show();
+    return show;
   }
+  let timer = null;
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => main.render(p), 40); };
+  for (const [k, lo, hi, st] of PARAMS)
+    inputs[k] = slider($("sliders"), SYM[k], lo, hi, st, k === "n" ? 0 : 3, () => p[k],
+                       v => { p[k] = v; presetSel.value = ""; schedule(); });
+  const sync = () => Object.values(inputs).forEach(f => f());
   presetSel.append(new Option("— プリセット —", ""));
   PRESETS.forEach(([name], i) => presetSel.append(new Option(name, i)));
-  presetSel.addEventListener("change", () => { if (presetSel.value !== "") { Object.assign(p, PRESETS[+presetSel.value][1]); sync(); schedule(); } });
-  function sync() { for (const k in inputs) { inputs[k][0].value = p[k]; inputs[k][1].textContent = (+p[k]).toFixed(k === "n" ? 0 : 3); } }
+  presetSel.addEventListener("change", () => {
+    if (presetSel.value !== "") { Object.assign(p, PRESETS[+presetSel.value][1]); sync(); schedule(); }
+  });
+  function show(q) { Object.assign(p, q); presetSel.value = ""; sync(); main.render(p); }
 
-  // magma 風カラーマップ
-  const STOPS = [[0, 0, 0, 4], [0.25, 81, 18, 124], [0.5, 183, 55, 121], [0.75, 252, 137, 97], [1, 252, 253, 191]];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255; let j = 0; while (j < STOPS.length - 2 && t > STOPS[j + 1][0]) j++;
-    const [a, b] = [STOPS[j], STOPS[j + 1]], f = (t - a[0]) / (b[0] - a[0]);
-    for (let c = 0; c < 3; c++) LUT[i * 3 + c] = a[c + 1] + f * (b[c + 1] - a[c + 1]);
+  // 色彩 UI
+  const palSel = $("palette");
+  for (const [k, [name]] of Object.entries(PALETTES)) palSel.append(new Option(name, k));
+  const colorShow = [];
+  let paintTimer = null;
+  function recolor() {
+    store.set("gfoc.color.v1", color);
+    $("customColors").hidden = color.palette !== "custom";
+    buildLUT();
+    cancelAnimationFrame(paintTimer);
+    paintTimer = requestAnimationFrame(() => renderers.forEach(r => r.paint()));
+  }
+  for (const [k, label, lo, hi, st, dg] of COLOR_SLIDERS)
+    colorShow.push(slider($("colorSliders"), label, lo, hi, st, dg, () => color[k], v => { color[k] = v; recolor(); }));
+  function syncColor() {
+    palSel.value = color.palette;
+    for (const k of ["c1", "c2", "c3", "bg"]) $(k).value = color[k];
+    colorShow.forEach(f => f());
+  }
+  palSel.addEventListener("change", () => { color.palette = palSel.value; recolor(); });
+  for (const k of ["c1", "c2", "c3", "bg"]) $(k).addEventListener("input", e => { color[k] = e.target.value; recolor(); });
+  $("resetColor").addEventListener("click", () => { Object.assign(color, COLOR_DEFAULT); syncColor(); recolor(); });
+
+  // ==================================================================================
+  // 特徴量と初期の評価関数（shape_map.py の Beauty をブラウザ用に近似）
+  // ==================================================================================
+  const bell = (x, mu, s) => Math.exp(-0.5 * ((x - mu) / s) ** 2);
+  const logBell = (x, mu, s) => -0.5 * ((x - mu) / s) ** 2;
+  const sig = (x, x0, s) => 1 / (1 + Math.exp(-(x - x0) / s));
+  const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  function randomParams() {
+    return { n: 3 + Math.floor(Math.random() * 8), lam: rnd(-2.8, 2.8), alpha: rnd(-5, 5), beta: rnd(-1.5, 1.5),
+             gamma: rnd(-1.2, 1.2), omega: Math.random() < 0.5 ? 0 : rnd(-0.3, 0.3) };
   }
 
-  function step(x, y, q) {
-    const zz = x * x + y * y;
-    let zr = x, zi = y;                         // z^(n-1)
-    for (let i = 1; i < q.n - 1; i++) { const t = zr * x - zi * y; zi = zr * y + zi * x; zr = t; }
-    const ren = zr * x - zi * y;                // Re(z^n)
-    const p_ = q.lam + q.alpha * zz + q.beta * ren;
-    return [p_ * x - q.omega * y + q.gamma * zr, p_ * y + q.omega * x - q.gamma * zi];
-  }
-
-  // 境界を推定して発散を検出
-  function probe(q, N = 20000) {
-    let x = 0.01, y = 0.003, R = 0;
-    for (let i = 0; i < N; i++) {
-      [x, y] = step(x, y, q);
-      if (!isFinite(x) || Math.abs(x) + Math.abs(y) > 1e4) return null;
-      if (i > 1000) R = Math.max(R, Math.hypot(x, y));
-    }
-    return R > 1e-6 ? { R, x, y } : null;
-  }
-
-  let job = 0, timer = null;
-  function schedule() { clearTimeout(timer); timer = setTimeout(render, 40); }
-
-  function render() {
-    const id = ++job, q = { ...p, n: Math.round(p.n) };
+  // 軌道を 128×128 に落としてボックス次元・余白・もや・斑点・角度コントラスト・Lyapunov を測る
+  function analyze(q) {
     const pr = probe(q);
-    ctx.fillStyle = "#0b0b10"; ctx.fillRect(0, 0, W, W);
-    if (!pr) { statusEl.textContent = "diverged / fixed point"; return false; }
-    const hist = new Float32Array(W * W), img = ctx.createImageData(W, W);
-    const scale = (W / 2 - 8) / (pr.R * 1.02);
-    let x = pr.x, y = pr.y, total = 0, max = 1;
-    const TOTAL = 3_000_000, CHUNK = 300_000;
-    function chunk() {
-      if (id !== job) return;
-      for (let i = 0; i < CHUNK; i++) {
-        [x, y] = step(x, y, q);
-        const px = (W / 2 + x * scale) | 0, py = (W / 2 - y * scale) | 0;
-        if (px >= 0 && px < W && py >= 0 && py < W) { const v = ++hist[py * W + px]; if (v > max) max = v; }
-      }
-      total += CHUNK;
-      const lm = Math.log1p(max), d = img.data;
-      for (let i = 0; i < hist.length; i++) {
-        const t = hist[i] ? Math.min(255, (Math.log1p(hist[i]) / lm) ** 0.8 * 255) | 0 : 0;
-        d[i * 4] = LUT[t * 3]; d[i * 4 + 1] = LUT[t * 3 + 1]; d[i * 4 + 2] = LUT[t * 3 + 2]; d[i * 4 + 3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
-      statusEl.textContent = `n=${q.n}  ${(total / 1e6).toFixed(1)}M pts`;
-      if (total < TOTAL) requestAnimationFrame(chunk);
+    if (!pr) return null;
+    const G = 128, h = new Float32Array(G * G);
+    let x = pr.x, y = pr.y, max = 1;
+    for (let i = 0; i < 80000; i++) {
+      step(q, x, y); x = NX; y = NY;
+      const gx = ((x / pr.R) * 0.5 + 0.5) * (G - 1) | 0, gy = ((y / pr.R) * 0.5 + 0.5) * (G - 1) | 0;
+      if (gx >= 0 && gx < G && gy >= 0 && gy < G) { const v = ++h[gy * G + gx]; if (v > max) max = v; }
     }
-    chunk();
-    return true;
+    const occ32 = new Uint8Array(32 * 32);
+    let c128 = 0, c32 = 0, occDisk = 0, disk = 0, haze = 0, speck = 0;
+    const ang = new Float64Array(72), lm = Math.log1p(max), c = (G - 1) / 2;
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const k = j * G + i, dx = i - c, dy = j - c, r2 = dx * dx + dy * dy, inD = r2 <= (G / 2) ** 2;
+      if (inD) disk++;
+      if (!h[k]) continue;
+      c128++; if (inD) occDisk++;
+      const o = (j >> 2) * 32 + (i >> 2); if (!occ32[o]) { occ32[o] = 1; c32++; }
+      if (Math.log1p(h[k]) / lm < 0.4) haze++;
+      const nb = (i > 0 && h[k - 1] > 0) + (i < G - 1 && h[k + 1] > 0) + (j > 0 && h[k - G] > 0) + (j < G - 1 && h[k + G] > 0);
+      if (nb <= 2) speck++;
+      if (r2 > (0.3 * G / 2) ** 2) ang[Math.floor((Math.atan2(dy, dx) / (2 * Math.PI) + 0.5) * 72) % 72] += h[k];
+    }
+    const am = ang.reduce((a, b) => a + b, 0) / 72;
+    const actr = am > 0 ? Math.sqrt(ang.reduce((a, b) => a + (b - am) ** 2, 0) / 72) / am : 0;
+    // 最大 Lyapunov 指数（差分ベクトルを毎ステップ正規化）
+    const d0 = 1e-8; let x2 = x + d0, y2 = y, lsum = 0;
+    for (let i = 0; i < 3000; i++) {
+      step(q, x, y); const ax = NX, ay = NY;
+      step(q, x2, y2);
+      const dx = NX - ax, dy = NY - ay, dd = Math.hypot(dx, dy) || 1e-300;
+      lsum += Math.log(dd / d0);
+      x = ax; y = ay; x2 = ax + dx * d0 / dd; y2 = ay + dy * d0 / dd;
+    }
+    return { q, D: Math.log2(c128 / Math.max(c32, 1)) / 2, fill: occDisk / disk,
+             haze: haze / c128, speckle: speck / c128, actr, lyap: lsum / 3000, mirror: q.omega === 0 ? 1 : 0 };
+  }
+  const isGood = a => a && a.D > 1.3 && a.D < 1.95 && a.fill > 0.08 && a.fill < 0.8 && a.lyap > 0.01;
+
+  const clip = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const FEATS = [
+    ["Order（秩序）", 1], ["Complexity（複雑さ）", 1], ["Contrast（図と地）", 1],
+    ["回転対称の数が多い", 0], ["対称数が極端（少 or 多）", 0], ["鏡映対称がある", 0],
+    ["面的（次元が高い）", 0], ["次元が極端（線 or 面）", 0], ["カオスが強い", 0], ["カオスの強さが極端", 0],
+    ["余白が多い", 0], ["余白量が極端", 0], ["角度方向の模様が明瞭", 0], ["淡いもやが多い", 0], ["粒子感が強い", 0],
+  ];
+  const W0 = FEATS.map(f => f[1]);
+  function phi(a) {
+    const neg = 1 - a.fill, ll = Math.log(Math.max(a.lyap, 1e-4));
+    const logO = logBell(Math.log(a.q.n), Math.log(6), 0.55) + Math.log(0.65 + 0.35 * a.mirror)
+               + Math.log(0.3 + 0.7 * sig(a.actr, 0.5, 0.15));
+    const logC = 0.5 * (logBell(a.D, 1.72, 0.11) + logBell(ll, Math.log(0.35), 0.7));
+    const logK = (logBell(neg, 0.45, 0.22) + Math.log(1 - 0.6 * sig(a.haze, 0.5, 0.1))
+                + Math.log(1 - 0.7 * sig(a.speckle, 0.2, 0.04))) / 3;
+    const z = (v, mu, s) => clip((v - mu) / s, -3, 3);
+    const zn = z(Math.log(a.q.n), Math.log(6), 0.5), zD = z(a.D, 1.82, 0.12), zL = z(ll, Math.log(0.3), 1);
+    const zN = z(neg, 0.5, 0.2);
+    return [clip(logO, -6, 0), clip(logC, -6, 0), clip(logK, -6, 0),
+            zn, zn * zn / 3, a.mirror * 2 - 1, zD, zD * zD / 3, zL, zL * zL / 3, zN, zN * zN / 3,
+            z(Math.log(a.actr + 1e-3), Math.log(0.7), 0.6), z(a.haze, 0.55, 0.25), z(a.speckle, 0.08, 0.08)];
   }
 
-  // ランダム探索：発散せず、外接円内を適度に埋め、ボックス次元が中庸（線でも面でもない）なものを探す
-  function boxStats(q, pr) {
-    const cells = G => {
-      const seen = new Uint8Array(G * G); let x = pr.x, y = pr.y, cnt = 0;
-      for (let i = 0; i < 60000; i++) {
-        [x, y] = step(x, y, q);
-        const gx = ((x / pr.R) * 0.5 + 0.5) * (G - 1) | 0, gy = ((y / pr.R) * 0.5 + 0.5) * (G - 1) | 0;
-        if (gx >= 0 && gx < G && gy >= 0 && gy < G && !seen[gy * G + gx]) { seen[gy * G + gx] = 1; cnt++; }
+  // ==================================================================================
+  // 好みの学習（Bradley–Terry、初期評価関数を事前分布とする L2 正則化）
+  // ==================================================================================
+  const LKEY = "gfoc.pref.v1";
+  let pairs = (store.get(LKEY) || {}).pairs || [];
+  let w = W0.slice();
+  const util = f => f.reduce((s, v, i) => s + v * w[i], 0);
+
+  function fit() {
+    w = W0.slice();
+    if (!pairs.length) return;
+    const X = pairs.map(([a, b]) => a.map((v, i) => v - b[i])), lr = 0.5 / Math.max(10, pairs.length), PRIOR = 3.0;
+    for (let it = 0; it < 400; it++) {
+      const g = w.map((wi, i) => PRIOR * (wi - W0[i]));
+      for (const x of X) {
+        const m = x.reduce((s, v, i) => s + v * w[i], 0), e = -1 / (1 + Math.exp(m));   // d/dm log(1+e^-m)
+        for (let i = 0; i < w.length; i++) g[i] += e * x[i];
       }
-      return cnt;
-    };
-    const c32 = cells(32), c64 = cells(64);
-    return { D: Math.log2(c64 / c32), fill: c64 / (Math.PI * 32 * 32) };
+      for (let i = 0; i < w.length; i++) w[i] -= lr * g[i];
+    }
   }
-  document.getElementById("random").addEventListener("click", () => {
-    const r = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  // 候補プール（バックグラウンドで少しずつ補充）
+  const pool = [];
+  let filling = false;
+  async function fill(target = 10) {
+    if (filling) return; filling = true;
+    while (pool.length < target) {
+      for (let t = 0; t < 40; t++) {
+        const a = analyze(randomParams());
+        if (isGood(a)) { a.f = phi(a); pool.push(a); break; }
+      }
+      await new Promise(r => setTimeout(r, 0));
+      if (!cur && pool.length >= 2) nextPair();
+    }
+    filling = false;
+  }
+
+  const rA = makeRenderer($("cvA")), rB = makeRenderer($("cvB"));
+  let cur = null;
+  function nextPair() {
+    if (pool.length < 2) { cur = null; fill(); return; }
+    // 半分は「今の好みで最良の候補」を混ぜて、好みの境界を詰める（残りは探索）
+    const take = i => pool.splice(i, 1)[0];
+    let iA = Math.floor(Math.random() * pool.length);
+    if (pairs.length >= 3 && Math.random() < 0.5)
+      iA = pool.reduce((bi, c, i) => util(c.f) > util(pool[bi].f) ? i : bi, 0);
+    const A = take(iA), B = take(Math.floor(Math.random() * pool.length));
+    cur = Math.random() < 0.5 ? [A, B] : [B, A];
+    rA.render(cur[0].q, 8e5); rB.render(cur[1].q, 8e5);
+    fill();
+  }
+
+  function choose(k) {
+    if (!cur) return;
+    if (k !== null) {
+      pairs.push([cur[k].f, cur[1 - k].f].map(f => f.map(v => +v.toFixed(4))));
+      if (pairs.length > 1000) pairs = pairs.slice(-1000);
+      store.set(LKEY, { pairs });
+      fit(); showModel();
+    }
+    nextPair();
+  }
+  $("pickA").addEventListener("click", () => choose(0));
+  $("pickB").addEventListener("click", () => choose(1));
+  $("pickNone").addEventListener("click", () => choose(null));
+  $("wrapA").addEventListener("click", () => choose(0));
+  $("wrapB").addEventListener("click", () => choose(1));
+  for (const [id, k] of [["wrapA", 0], ["wrapB", 1]])
+    $(id).addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(k); } });
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("input, select, textarea")) return;
+    if (e.key === "ArrowLeft") choose(0);
+    else if (e.key === "ArrowRight") choose(1);
+  });
+
+  function showModel() {
+    $("learnCount").textContent = pairs.length
+      ? `比較 ${pairs.length} 回ぶん学習済み` : "まだ学習していません（初期の評価関数で選びます）";
+    const bars = $("bars"); bars.innerHTML = "";
+    if (!pairs.length) return;
+    const dv = w.map((v, i) => v - W0[i]), mx = Math.max(0.3, ...dv.map(Math.abs));
+    const order = dv.map((v, i) => i).sort((a, b) => Math.abs(dv[b]) - Math.abs(dv[a])).slice(0, 8);
+    for (const i of order) {
+      const el = document.createElement("div"); el.className = "bar";
+      const frac = Math.abs(dv[i]) / mx * 50, pos = dv[i] >= 0;
+      el.innerHTML = `<span>${FEATS[i][0]}</span><span class="track"><span class="fill" style="` +
+        `${pos ? "left:50%" : `left:${50 - frac}%`};width:${frac}%;background:${pos ? "var(--accent)" : "var(--muted)"}"></span></span>` +
+        `<span class="val">${dv[i] >= 0 ? "+" : ""}${dv[i].toFixed(2)}</span>`;
+      bars.append(el);
+    }
+  }
+
+  $("resetLearn").addEventListener("click", () => {
+    if (!confirm("このブラウザに保存された好みの学習データを消去しますか？")) return;
+    pairs = []; store.del(LKEY); fit(); showModel();
+  });
+
+  $("recommend").addEventListener("click", async () => {
+    const btn = $("recommend"); btn.disabled = true;
+    const cands = pool.slice();
+    for (let k = 0; k < 24; k++) {
+      btn.textContent = `探索中… ${k + 1}/24`;
+      for (let t = 0; t < 40; t++) {
+        const a = analyze(randomParams());
+        if (isGood(a)) { a.f = phi(a); cands.push(a); break; }
+      }
+      await new Promise(r => setTimeout(r, 0));
+    }
+    btn.textContent = "あなた好みの花を描く"; btn.disabled = false;
+    if (!cands.length) return;
+    const best = cands.reduce((b, c) => util(c.f) > util(b.f) ? c : b);
+    show(best.q);
+    $("cv").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
+  // スタジオのランダム探索：初期評価関数（の近似）でまあまあ良いものを返す
+  $("random").addEventListener("click", () => {
     for (let t = 0; t < 1500; t++) {
-      const q = { n: 3 + Math.floor(Math.random() * 8), lam: r(-2.8, 2.8), alpha: r(-5, 5), beta: r(-1.5, 1.5),
-                  gamma: r(-1.2, 1.2), omega: Math.random() < 0.5 ? 0 : r(-0.3, 0.3) };
-      const pr = probe(q);
-      if (!pr) continue;
-      const { D, fill } = boxStats(q, pr);
-      if (D > 1.45 && D < 1.9 && fill > 0.15 && fill < 0.7) { Object.assign(p, q); presetSel.value = ""; sync(); render(); return; }
+      const a = analyze(randomParams());
+      if (isGood(a) && a.D > 1.45 && a.D < 1.9 && a.fill > 0.15 && a.fill < 0.7) { show(a.q); return; }
     }
     statusEl.textContent = "見つかりませんでした。もう一度どうぞ";
   });
-  document.getElementById("save").addEventListener("click", () => {
-    const a = document.createElement("a"); a.download = `icon_n${Math.round(p.n)}.png`; a.href = cv.toDataURL(); a.click();
+  $("save").addEventListener("click", () => {
+    const a = document.createElement("a"); a.download = `icon_n${Math.round(p.n)}.png`; a.href = $("cv").toDataURL(); a.click();
   });
 
-  presetSel.value = "0"; sync(); render();
+  // 起動
+  syncColor(); buildLUT(); $("customColors").hidden = color.palette !== "custom";
+  presetSel.value = "0"; main.render(p);
+  fit(); showModel(); fill();
+
 })();
 </script>
 </body>
