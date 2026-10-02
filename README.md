@@ -1,6 +1,6 @@
 # Generative Flower — Order × Chaos
 
-**🌐 Web ページ: https://york-14.github.io/generative-flower-order-chaos/**
+**🌐 Web ページ: https://york-14.github.io/Generative-flower-Order-Chaos/**
 
 対称カオス写像（*symmetric icons*）が描く「花」のような図形を大量に探索し、
 
