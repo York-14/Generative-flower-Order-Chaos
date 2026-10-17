@@ -156,7 +156,8 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         <option value="3000000">点の数: 300 万</option>
       </select>
       </div>
-      <label class="check"><input type="checkbox" id="spin"> 自動回転</label>
+      <label class="check"><input type="checkbox" id="spin" checked> 自動回転</label>
+      <div id="spinSliders"></div>
       <div id="pointColor">
       <h4 style="margin-top:18px">色彩</h4>
       <select id="palette" aria-label="パレット"></select>
@@ -810,7 +811,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     }`;
 
   const vr = { iso: null, ink: null, present: null, fbo: null, tex: null, size: 0, kMax: 24, fmt: null,
-               frame: 0, sig: "", lastMove: 0, parVer: 0, lastRendered: false };
+               frame: 0, sig: "", lastMove: 0, spinScale: 0.75, parVer: 0, lastRendered: false };
   let volRenderOK = volOK;
   if (volOK) {
     try {
@@ -907,22 +908,38 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     resize();
     const sig = [view.yaw, view.pitch, view.zoom, view.height, vr.parVer, volume.ver, fbW, mode].join();
     if (sig !== vr.sig) { vr.sig = sig; vr.lastMove = now; vr.frame = 0; }
-    const moving = dragging || now - vr.lastMove < 160;
+    const spinning = $("spin").checked && !dragging;
+    const moving = dragging || (!spinning && now - vr.lastMove < 160);
     if (moving) {
       traceFrame(Math.max(64, Math.round(fbW * 0.5)), Math.max(24, Math.round(vs.steps * 0.45)), 6, 0);
+      vr.frame = 0;
+    } else if (spinning) {
+      // 回転中はフレーム時間を見て解像度を自動調整（重ければ下げ、余裕があれば上げる）
+      if (motion.dt > 0.04) vr.spinScale = Math.max(0.4, vr.spinScale * 0.92);
+      else if (motion.dt < 0.022) vr.spinScale = Math.min(1, vr.spinScale * 1.03);
+      traceFrame(Math.max(64, Math.round(fbW * vr.spinScale)), Math.max(32, Math.round(vs.steps * 0.6)), 8, 0);
       vr.frame = 0;
     } else if (vr.frame < vr.kMax) {
       traceFrame(fbW, vs.steps, 12, vr.frame);
       vr.frame++;
     } else return;
     present();
-    statusEl.textContent = `${volume.label}  ${moving ? "preview" : `${vr.frame}/${vr.kMax}`}`;
+    statusEl.textContent = `${volume.label}  ${moving ? "preview" : spinning ? `♩=${motion.bpm}` : `${vr.frame}/${vr.kMax}`}`;
   }
 
+  // 自動回転：BPM に合わせて 1 拍ごとに速さがゆるく脈打つ（平均 7.5°/拍、48 拍＝12 小節で 1 周）
+  const motion = { bpm: 80, phase: 0, last: 0, dt: 1 / 60 };
   (function loop(now) {
-    if ($("spin").checked && !dragging) { view.yaw += 0.004; dirty = true; }
+    now = now || performance.now();
+    motion.dt = Math.min(0.1, Math.max(0.001, (now - (motion.last || now)) / 1000)); motion.last = now;
+    if ($("spin").checked && !dragging) {
+      const bps = motion.bpm / 60;
+      motion.phase = (motion.phase + motion.dt * bps) % 1;
+      view.yaw += motion.dt * bps * (7.5 * Math.PI / 180) * (1 + 0.5 * Math.cos(2 * Math.PI * motion.phase));
+      dirty = true;
+    }
     if (mode === "points") { if (dirty) draw(); }
-    else if (gl && volRenderOK) renderVolume(now || performance.now());
+    else if (gl && volRenderOK) renderVolume(now);
     requestAnimationFrame(loop);
   })();
 
@@ -1003,6 +1020,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     slider($("sliders"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
   for (const [k, label, lo, hi, st, dg] of PARAMS3)
     slider($("sliders3"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
+  slider($("spinSliders"), "テンポ BPM", 40, 140, 1, 0, () => motion.bpm, v => { motion.bpm = v; });
   slider($("viewSliders"), "高さ倍率", 0, 1.2, 0.01, 2, () => view.height, v => { view.height = v; dirty = true; });
 
   // ver.2: ボリューム描画の設定
