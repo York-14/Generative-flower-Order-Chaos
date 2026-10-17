@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generative Flower 3D v2</title>
-<meta name="description" content="対称カオス写像の 3D アトラクタを、点群・ガラス／水銀の等値面・水中のインクのボリュームとして WebGL2 で描く。">
+<meta name="description" content="対称カオス写像の 3D アトラクタを、点群・ガラス／金属の等値面・表面を流れる流線として WebGL2 で描く。">
 <style>
 :root {
   --bg: #fbfaf7; --surface: #ffffff; --text: #1c1b22; --muted: #5d5a68;
@@ -94,7 +94,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       <select id="renderMode" aria-label="描画モード">
         <option value="points">点群</option>
         <option value="iso">等値面（ガラス／水銀）</option>
-        <option value="ink">水中のインク</option>
+        <option value="flow">流線</option>
       </select>
       <div id="volCommon" hidden>
         <select id="volRes" aria-label="ボリューム解像度">
@@ -133,13 +133,17 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         </div>
         <div id="isoExposure"></div>
       </div>
-      <div id="inkPanel" hidden>
-        <h4 style="margin-top:18px">インク</h4>
-        <div id="inkSliders"></div>
-        <select id="inkPreset" aria-label="インク色"></select>
+      <div id="flowPanel" hidden>
+        <h4 style="margin-top:18px">流線</h4>
+        <div id="flowSliders"></div>
+        <label class="check"><input type="checkbox" id="flowAnim" checked> 流れのアニメーション（テンポに同期）</label>
+        <div id="flowSliders2"></div>
+        <h4 style="margin-top:18px">スタイル</h4>
+        <select id="flowStyle" aria-label="スタイル"></select>
         <div class="colors">
-          <label>薄い部分<input type="color" id="ink1" value="#d8487a"></label>
-          <label>濃い部分<input type="color" id="ink2" value="#1c1757"></label>
+          <label>背景<input type="color" id="flowBg" value="#05060b"></label>
+          <label>線（疎）<input type="color" id="ink1" value="#1f6bff"></label>
+          <label>線（密）<input type="color" id="ink2" value="#c8f6ff"></label>
         </div>
       </div>
       <h4 style="margin-top:18px">表示</h4>
@@ -156,7 +160,8 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         <option value="3000000">点の数: 300 万</option>
       </select>
       </div>
-      <label class="check"><input type="checkbox" id="spin"> 自動回転</label>
+      <label class="check"><input type="checkbox" id="spin" checked> 自動回転</label>
+      <div id="spinSliders"></div>
       <div id="pointColor">
       <h4 style="margin-top:18px">色彩</h4>
       <select id="palette" aria-label="パレット"></select>
@@ -203,8 +208,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     <tr><td>等値面（ガラス）</td><td>密度がしきい値を超える面をレイマーチング＋二分探索で求め、法線は密度の勾配から計算。
       Schlick のフレネル、屈折（屈折率 1.30–1.60）、内部を通った厚みに応じた Beer–Lambert 吸収。しきい値は「占有ボクセルのうち下位何割を除くか」で、形が変わっても同じ感覚で使えます。</td></tr>
     <tr><td>等値面（水銀）</td><td>同じ面を金属の反射（F0 ≈ 0.78）だけで描画。周囲はプロシージャルなスタジオ照明。</td></tr>
-    <tr><td>水中のインク</td><td>面を作らず、密度 × 濃度 を消散係数とする半透明の媒質として前から後ろへ合成。
-      各点から光源へ短いシャドウレイを飛ばす単一散乱と、Henyey–Greenstein の位相関数（g）。</td></tr>
+    <tr><td>流線</td><td>密度の勾配 ∇ρ と、方位方向・縦方向を混ぜた向き d の外積 v = ∇ρ × d を流れの場にして積分した線。
+      v は ∇ρ に直交するので、線はいつも形の表面（等値面）の上を走ります。「流れの向き」が 90° なら等高線のように形を巻き、0° なら花弁に沿って縦に流れます。
+      線どうしの間隔は格子で保ち、1 本ごとに n 回回転（＋鏡映）で複製するので対称性は崩れません。線上を進む光の粒はテンポに同期します。</td></tr>
   </table>
   <p>ドラッグ中は半分の解像度・少ないステップで描き、止まると全解像度でジッターをずらしながら 24 枚を平均して滑らかにします。
   3D テクスチャが使えない環境では点群モードだけになります。</p>
@@ -339,7 +345,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   // WebGL2
   // ==================================================================================
   const canvas = $("gl");
-  const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
+  const gl = canvas.getContext("webgl2", { antialias: true, premultipliedAlpha: false });
   if (!gl) { $("nogl").hidden = false; }
   const floatOK = gl && !!gl.getExtension("EXT_color_buffer_float");
 
@@ -519,7 +525,119 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       return src;
     }
 
+    // ---- 流線：密度場から作る「形の表面に沿う」ベクトル場を積分する ----
+    let store = null;
+    function makeLines(L) {
+      const { res, vol, quant, n, mirror, VB, VW } = store;
+      const r2 = res * res, sxy = res / (2 * VB), sw = res / (2 * VW);
+      const sample = (x, y, z) => {
+        const fx = (x + VB) * sxy - 0.5, fy = (y + VB) * sxy - 0.5, fz = (z + VW) * sw - 0.5;
+        const ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+        if (ix < 0 || iy < 0 || iz < 0 || ix >= res - 1 || iy >= res - 1 || iz >= res - 1) return 0;
+        const ax = fx - ix, ay = fy - iy, az = fz - iz, i = iz * r2 + iy * res + ix;
+        const c00 = vol[i] + (vol[i + 1] - vol[i]) * ax, c10 = vol[i + res] + (vol[i + res + 1] - vol[i + res]) * ax;
+        const c01 = vol[i + r2] + (vol[i + r2 + 1] - vol[i + r2]) * ax, c11 = vol[i + r2 + res] + (vol[i + r2 + res + 1] - vol[i + r2 + res]) * ax;
+        const c0 = c00 + (c10 - c00) * ay, c1 = c01 + (c11 - c01) * ay;
+        return c0 + (c1 - c0) * az;
+      };
+      const ex = 2 * VB / res, ez = 2 * VW / res;
+      const cphi = Math.cos(L.phi * Math.PI / 180), sphi = Math.sin(L.phi * Math.PI / 180);
+      // v = ∇ρ × (cosφ e_θ + sinφ e_z)。∇ρ に直交するので線は等値面の上を走り、回転・鏡映と可換
+      const V = [0, 0, 0];
+      function field(x, y, z) {
+        const gx = (sample(x + ex, y, z) - sample(x - ex, y, z)) / ex;
+        const gy = (sample(x, y + ex, z) - sample(x, y - ex, z)) / ex;
+        const gz = (sample(x, y, z + ez) - sample(x, y, z - ez)) / ez;
+        const r = Math.hypot(x, y);
+        if (r < 1e-4) return false;
+        const dx = -y / r * cphi, dy = x / r * cphi, dz = sphi;
+        let vx = gy * dz - gz * dy, vy = gz * dx - gx * dz, vz = gx * dy - gy * dx;
+        const m = Math.hypot(vx, vy, vz);
+        if (m < 1e-6) return false;
+        V[0] = vx / m; V[1] = vy / m; V[2] = vz / m; return true;
+      }
+      const qv = t => { const i = Math.min(99.999, t * 100), k = Math.floor(i); return quant[k] + (quant[k + 1] - quant[k]) * (i - k); };
+      const thrSeed = qv(L.thr), thrStop = thrSeed * 0.6;
+      // 間隔を保つための占有格子（全ての対称像を書き込む）
+      const G = L.grid, occ = new Int32Array(G * G * G).fill(-1), occStep = new Int32Array(G * G * G);
+      const C = [], S = [];
+      for (let k = 0; k < n; k++) { C.push(Math.cos(2 * Math.PI * k / n)); S.push(Math.sin(2 * Math.PI * k / n)); }
+      const cellOf = (x, y, z) => {
+        const cx = Math.floor((x + VB) / (2 * VB) * G), cy = Math.floor((y + VB) / (2 * VB) * G), cz = Math.floor((z + VW) / (2 * VW) * G);
+        return cx < 0 || cy < 0 || cz < 0 || cx >= G || cy >= G || cz >= G ? -1 : (cz * G + cy) * G + cx;
+      };
+      const mark = (x, y, z, id, st) => {
+        for (let k = 0; k < n; k++) for (let m = 0; m < (mirror ? 2 : 1); m++) {
+          const yy = m ? -y : y, c = cellOf(C[k] * x - S[k] * yy, S[k] * x + C[k] * yy, z);
+          if (c >= 0 && occ[c] === -1) { occ[c] = id; occStep[c] = st; }
+        }
+      };
+      const h = 0.7 * ex, maxSteps = L.steps;
+      function trace(x, y, z, dir, id, out) {
+        let st = 0;
+        while (st < maxSteps) {
+          if (!field(x, y, z)) break;
+          const mx = x + V[0] * h * 0.5 * dir, my = y + V[1] * h * 0.5 * dir, mz = z + V[2] * h * 0.5 * dir;
+          if (!field(mx, my, mz)) break;
+          x += V[0] * h * dir; y += V[1] * h * dir; z += V[2] * h * dir;
+          if (Math.abs(x) > VB || Math.abs(y) > VB || Math.abs(z) > VW) break;
+          if (sample(x, y, z) < thrStop) break;
+          const c = cellOf(x, y, z);
+          if (c < 0) break;
+          if (occ[c] !== -1 && (occ[c] !== id || st - occStep[c] > 12)) break;
+          out.push(x, y, z); st++;
+          if (st % 2 === 0) mark(x, y, z, id, st);
+        }
+      }
+      const lines = [];
+      let id = 0, verts = 0;
+      for (let a = 0; a < L.tries && verts < L.maxVerts; a++) {
+        const r = 0.1 + Math.sqrt(Math.random()) * 0.88, t = Math.random() * 2 * Math.PI;
+        const x = r * Math.cos(t), y = r * Math.sin(t), z = (Math.random() * 2 - 1) * VW * 0.95;
+        if (sample(x, y, z) < thrSeed) continue;
+        const c = cellOf(x, y, z);
+        if (c < 0 || occ[c] !== -1) continue;
+        const fw = [], bw = [];
+        trace(x, y, z, 1, id, fw); trace(x, y, z, -1, id, bw);
+        const np = fw.length / 3 + bw.length / 3 + 1;
+        if (np < 12) continue;
+        const pts = new Float32Array(np * 3);
+        let o = 0;
+        for (let i = bw.length - 3; i >= 0; i -= 3) { pts[o++] = bw[i]; pts[o++] = bw[i + 1]; pts[o++] = bw[i + 2]; }
+        pts[o++] = x; pts[o++] = y; pts[o++] = z;
+        for (let i = 0; i < fw.length; i++) pts[o++] = fw[i];
+        // 小さく閉じた渦（極大点のまわりの輪）は捨てる
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (let i = 0; i < pts.length; i += 3) {
+          x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]);
+          z0 = Math.min(z0, pts[i + 2]); z1 = Math.max(z1, pts[i + 2]);
+        }
+        if (Math.hypot(x1 - x0, y1 - y0, (z1 - z0) * 0.5) < L.minSize) { mark(x, y, z, id, 0); id++; continue; }
+        mark(x, y, z, id, 0);
+        lines.push(pts); verts += np; id++;
+      }
+      // 頂点：位置 xyz + (弧長 s, 全長 L, 密度)。線ごとに区切り（primitive restart）
+      const V6 = new Float32Array(verts * 6), I = new Uint32Array(verts + lines.length);
+      let vi = 0, ii = 0, base = 0;
+      for (const pts of lines) {
+        const np = pts.length / 3;
+        let len = 0;
+        for (let i = 1; i < np; i++) len += Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
+        let s = 0;
+        for (let i = 0; i < np; i++) {
+          if (i) s += Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
+          const x = pts[i * 3], y = pts[i * 3 + 1], z = pts[i * 3 + 2];
+          V6[vi++] = x; V6[vi++] = y; V6[vi++] = z; V6[vi++] = s; V6[vi++] = len; V6[vi++] = Math.min(1.5, sample(x, y, z));
+          I[ii++] = base + i;
+        }
+        I[ii++] = 0xFFFFFFFF; base += np;
+      }
+      postMessage({ lid: L.lid, kind: "lines", verts: V6, idx: I, nLines: lines.length, reps: n * (mirror ? 2 : 1), n, mirror },
+                  [V6.buffer, I.buffer]);
+    }
+
     onmessage = e => {
+      if (e.data.kind === "lines") { if (store) makeLines(e.data); return; }
       const { q, res, total, id, VB, VW } = e.data;
       // 過渡を捨てて有界性を確認、半径の最大値を測る
       let x = 0.01, y = 0.003, w = 0, R = 0;
@@ -579,7 +697,10 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       // 占有ボクセルの密度の分位点（等値面のしきい値を形によらず同じ感覚で選べるように）
       const quant = [];
       for (let i = 0; i <= 100; i++) quant.push(vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * i / 100))] * sc : i / 100);
+      // 流線用には、さらに 2 回ぼかした滑らかな場を使う（細かなノイズで線が絡まないように）
+      store = { res, vol: blur(blur(new Float32Array(out), res), res), quant, n: q.n, mirror, VB, VW };
       postMessage({ id, res, data: out, reps, quant }, [out.buffer]);
+      if (e.data.lines) makeLines(e.data.lines);
     };
   }
 
@@ -603,12 +724,15 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     }
     const res = +$("volRes").value;
     volume.busy = true; volume.key = volKey();
-    volume.worker.postMessage({ q: { ...q, n: Math.round(q.n) }, res, total: res === 192 ? 30e6 : 12e6, id: ++volume.id, VB, VW });
+    volume.worker.postMessage({ q: { ...q, n: Math.round(q.n) }, res, total: res === 192 ? 30e6 : 12e6, id: ++volume.id, VB, VW,
+                                lines: mode === "flow" ? lineParams() : null });
+    if (mode === "flow") { flow.key = flowKey(); flow.busy = true; }
     statusEl.textContent = "ボリューム生成中…";
   }
 
   function onVolume(e) {
     const m = e.data;
+    if (m.kind === "lines") { if (m.lid === flow.lid) uploadLines(m); return; }
     if (m.id !== volume.id) return;
     if (m.progress !== undefined) { statusEl.textContent = `ボリューム生成中… ${Math.round(m.progress * 100)}%`; return; }
     volume.busy = false;
@@ -749,53 +873,6 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     }
   `;
 
-  const INK_FS = VOL_HEAD + `
-    uniform float uConc, uAlb, uG; uniform vec3 uLight, uLightV, uInk1, uInk2; uniform int uShSteps;
-    // 明るい水中の背景（光源方向が少し明るい）
-    vec3 water(vec3 v) {
-      vec3 c = mix(vec3(0.16, 0.42, 0.55), vec3(0.78, 0.92, 0.95), smoothstep(-0.8, 0.9, v.y));
-      return c + vec3(0.22, 0.20, 0.14) * pow(max(dot(v, uLightV), 0.0), 6.0);
-    }
-    float hg(float c, float g) { float d = 1.0 + g * g - 2.0 * g * c; return (1.0 - g * g) / (4.0 * 3.14159265 * d * sqrt(d)); }
-    vec3 inkCol(float d) { return mix(uInk1, uInk2, smoothstep(0.05, 1.0, d)); }
-    void main() {
-      vec3 ro, rd, dv; camRay(ro, rd, dv);
-      vec2 tb = hitBox(ro, rd);
-      if (tb.x > tb.y || tb.y < 0.0) { o = vec4(water(dv), 1.0); return; }
-      float t0 = max(tb.x, 0.0), t1 = tb.y, dt = 2.0 * length(uBox) / float(uSteps);
-      float jit = hash(vec3(gl_FragCoord.xy, uFrame));
-      float t = t0 + dt * jit;
-      float ph = hg(dot(uLight, rd), uG) * 4.0 * 3.14159265;
-      vec3 lightC = vec3(1.0, 0.96, 0.88) * 2.4, amb = vec3(0.50, 0.72, 0.78) * 0.55;
-      float sdt = 0.9 / float(uShSteps);
-      vec3 T = vec3(1.0), L = vec3(0.0);
-      for (int i = 0; i < 1024; i++) {
-        if (i >= uSteps || t > t1) break;
-        vec3 p = ro + rd * t;
-        float d = dens(p);
-        if (d > 0.004) {
-          vec3 ink = inkCol(d), ext = uConc * (1.05 - ink);   // インクは自分の色以外を吸う
-          // 光源方向への短いシャドウレイ
-          float tau = 0.0;
-          for (int j = 0; j < 32; j++) {
-            if (j >= uShSteps) break;
-            vec3 lp = p + uLight * sdt * (float(j) + jit);
-            if (outside(lp)) break;
-            tau += dens(lp);
-          }
-          vec3 Tl = exp(-tau * sdt * ext);
-          vec3 S = ink * (lightC * Tl * ph + amb);
-          vec3 Ts = exp(-d * ext * dt);
-          L += T * S * uAlb * (1.0 - Ts);
-          T *= Ts;
-          if (max(T.r, max(T.g, T.b)) < 0.01) break;
-        }
-        t += dt;
-      }
-      o = vec4(L + T * water(dv), 1.0);
-    }
-  `;
-
   const QUAD_VS = `#version 300 es
     const vec2 v[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
     out vec2 uv;
@@ -810,11 +887,11 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     }`;
 
   const vr = { iso: null, ink: null, present: null, fbo: null, tex: null, size: 0, kMax: 24, fmt: null,
-               frame: 0, sig: "", lastMove: 0, parVer: 0, lastRendered: false };
+               frame: 0, sig: "", lastMove: 0, spinScale: 0.75, parVer: 0, lastRendered: false };
   let volRenderOK = volOK;
   if (volOK) {
     try {
-      vr.iso = compile(QUAD_VS, ISO_FS); vr.ink = compile(QUAD_VS, INK_FS); vr.present = compile(QUAD_VS, PRESENT_FS);
+      vr.iso = compile(QUAD_VS, ISO_FS); vr.present = compile(QUAD_VS, PRESENT_FS);
       const half = gl.getExtension("EXT_color_buffer_half_float") || floatOK;
       vr.fmt = half ? [gl.RGBA16F, gl.HALF_FLOAT] : [gl.RGBA8, gl.UNSIGNED_BYTE];
       if (!half) vr.kMax = 8;
@@ -843,9 +920,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   const srgb2lin = h => hex2rgb(h).map(v => Math.pow(v / 255, 2.2));
 
   // 1 フレーム分をボリュームから描いて累積バッファへ（k 枚目は 1/(k+1) の重みで平均）
-  function traceFrame(S, steps, shSteps, k) {
+  function traceFrame(S, steps, k) {
     ensureTarget(S);
-    const iso = mode === "iso", pr = iso ? vr.iso : vr.ink;
+    const iso = true, pr = vr.iso;
     gl.bindFramebuffer(gl.FRAMEBUFFER, vr.fbo);
     gl.viewport(0, 0, S, S);
     gl.useProgram(pr);
@@ -869,19 +946,6 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       gl.uniform3fv(uloc(pr, "uBgTop"), srgb2lin($("envTop").value));
       gl.uniform3fv(uloc(pr, "uBgBot"), srgb2lin($("envBot").value));
       gl.uniform3fv(uloc(pr, "uTint"), srgb2lin($("envLight").value));
-    } else {
-      // 光源は視点に対して固定（方位・仰角）。シェーダには物体座標で渡す
-      const az = vs.lightAz * Math.PI / 180, el = vs.lightEl * Math.PI / 180;
-      const lv = [Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)];
-      const lo = [0, 1, 2].map(i => R[i * 3] * lv[0] + R[i * 3 + 1] * lv[1] + R[i * 3 + 2] * lv[2]);
-      gl.uniform3fv(uloc(pr, "uLight"), lo);
-      gl.uniform3fv(uloc(pr, "uLightV"), lv);
-      gl.uniform1f(uloc(pr, "uConc"), vs.conc);
-      gl.uniform1f(uloc(pr, "uAlb"), vs.alb);
-      gl.uniform1f(uloc(pr, "uG"), vs.g);
-      gl.uniform1i(uloc(pr, "uShSteps"), shSteps);
-      gl.uniform3fv(uloc(pr, "uInk1"), srgb2lin($("ink1").value));
-      gl.uniform3fv(uloc(pr, "uInk2"), srgb2lin($("ink2").value));
     }
     gl.enable(gl.BLEND);
     gl.blendColor(0, 0, 0, 1 / (k + 1));
@@ -896,9 +960,106 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     gl.useProgram(vr.present);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, vr.tex);
     gl.uniform1i(uloc(vr.present, "uTex"), 0);
-    gl.uniform1i(uloc(vr.present, "uTone"), mode === "iso" ? 1 : 0);
-    gl.uniform1f(uloc(vr.present, "uExp"), mode === "iso" ? vs.exposure : 1);
+    gl.uniform1i(uloc(vr.present, "uTone"), 1);
+    gl.uniform1f(uloc(vr.present, "uExp"), vs.exposure);
     gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+  }
+
+  // ==================================================================================
+  // ver.2: 流線（形の表面を流れる細い線。対称像はインスタンス描画で複製）
+  // ==================================================================================
+  const FLOW_VS = `#version 300 es
+    in vec3 aPos; in vec3 aAttr;
+    uniform mat3 uRot; uniform float uH, uCam; uniform int uN;
+    out vec3 vA; out float vNear;
+    void main() {
+      int k = gl_InstanceID % uN;
+      vec2 p = aPos.xy;
+      if (gl_InstanceID >= uN) p.y = -p.y;                       // 鏡映
+      float a = 6.28318530718 * float(k) / float(uN), c = cos(a), s = sin(a);
+      p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);            // n 回回転
+      vec3 q = uRot * vec3(p, aPos.z * uH);
+      float z = uCam - q.z;
+      gl_Position = vec4(q.xy * 2.5 / z, 0.0, 1.0);
+      vA = aAttr; vNear = clamp(1.6 - z / uCam, 0.0, 1.0);
+    }`;
+  const FLOW_FS = `#version 300 es
+    precision highp float;
+    in vec3 vA; in float vNear; out vec4 o;
+    uniform vec3 uC1, uC2; uniform float uAlpha, uTime, uFlow, uGlow;
+    void main() {
+      float s = vA.x, L = max(vA.y, 1e-4), u = s / L;
+      float taper = smoothstep(0.0, 0.15, u) * smoothstep(1.0, 0.85, u);   // 筆の入りと抜き
+      vec3 col = mix(uC1, uC2, smoothstep(0.15, 1.1, vA.z));
+      float pulse = 1.0;
+      if (uFlow > 0.5) {
+        float ph = fract(s * 1.6 - uTime);                                  // 線に沿って進む光の粒
+        pulse = 0.45 + 1.6 * exp(-ph * 9.0) * uGlow;
+      }
+      float a = uAlpha * taper * mix(0.3, 1.0, vNear) * pulse;
+      o = vec4(col * a, a);
+    }`;
+  const flow = { prog: null, vao: null, vbo: null, ibo: null, count: 0, reps: 1, n: 1, lid: 0, ready: false, label: "", busy: false };
+  if (volRenderOK) {
+    try {
+      flow.prog = compile(FLOW_VS, FLOW_FS);
+      flow.vao = gl.createVertexArray(); flow.vbo = gl.createBuffer(); flow.ibo = gl.createBuffer();
+      gl.bindVertexArray(flow.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, flow.vbo);
+      const lp = gl.getAttribLocation(flow.prog, "aPos"), la = gl.getAttribLocation(flow.prog, "aAttr");
+      gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, 24, 0);
+      gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la, 3, gl.FLOAT, false, 24, 12);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, flow.ibo);
+      gl.bindVertexArray(null);
+    } catch (err) { console.warn(err); flow.prog = null; }
+  }
+
+  function uploadLines(m) {
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, flow.vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts, gl.STATIC_DRAW);
+    gl.bindVertexArray(flow.vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, flow.ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    flow.count = m.idx.length; flow.reps = m.reps; flow.n = m.n; flow.ready = true; flow.busy = false;
+    flow.label = `n=${m.n}  流線 ${m.nLines}×${m.reps}`;
+    if (mode === "flow") statusEl.textContent = flow.label;
+  }
+
+  function requestLines() {
+    if (!volRenderOK || !flow.prog) return;
+    if (volume.key !== volKey() || !volume.worker) { requestVolume(); return; }
+    flow.busy = true; flow.key = flowKey();
+    volume.worker.postMessage({ kind: "lines", ...lineParams() });
+    statusEl.textContent = "流線を計算中…";
+  }
+
+  function drawFlow() {
+    resize();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, fbW, fbW);
+    const bg = hex2rgb($("flowBg").value).map(v => v / 255);
+    gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    if (!flow.ready) return;
+    const dark = 0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2] < 0.45;
+    const pr = flow.prog;
+    gl.useProgram(pr);
+    gl.uniformMatrix3fv(uloc(pr, "uRot"), false, rotMat());
+    gl.uniform1f(uloc(pr, "uH"), view.height);
+    gl.uniform1f(uloc(pr, "uCam"), 3.2 / view.zoom);
+    gl.uniform1i(uloc(pr, "uN"), flow.n);
+    gl.uniform3fv(uloc(pr, "uC1"), hex2rgb($("ink1").value).map(v => v / 255));
+    gl.uniform3fv(uloc(pr, "uC2"), hex2rgb($("ink2").value).map(v => v / 255));
+    gl.uniform1f(uloc(pr, "uAlpha"), fs.alpha * (dark ? 0.8 : 1));
+    gl.uniform1f(uloc(pr, "uTime"), motion.beats * 0.5);
+    gl.uniform1f(uloc(pr, "uFlow"), $("flowAnim").checked ? 1 : 0);
+    gl.uniform1f(uloc(pr, "uGlow"), fs.glow);
+    gl.enable(gl.BLEND);
+    if (dark) gl.blendFunc(gl.ONE, gl.ONE);                 // 暗い背景：光の線を加算
+    else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);      // 明るい背景：墨を重ねる
+    gl.bindVertexArray(flow.vao);
+    gl.drawElementsInstanced(gl.LINE_STRIP, flow.count, gl.UNSIGNED_INT, 0, flow.reps);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
   }
 
   // 動いている間は半分の解像度・少ないステップ、止まったら全解像度でジッターを累積
@@ -907,22 +1068,40 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     resize();
     const sig = [view.yaw, view.pitch, view.zoom, view.height, vr.parVer, volume.ver, fbW, mode].join();
     if (sig !== vr.sig) { vr.sig = sig; vr.lastMove = now; vr.frame = 0; }
-    const moving = dragging || now - vr.lastMove < 160;
+    const spinning = $("spin").checked && !dragging;
+    const moving = dragging || (!spinning && now - vr.lastMove < 160);
     if (moving) {
-      traceFrame(Math.max(64, Math.round(fbW * 0.5)), Math.max(24, Math.round(vs.steps * 0.45)), 6, 0);
+      traceFrame(Math.max(64, Math.round(fbW * 0.5)), Math.max(24, Math.round(vs.steps * 0.45)), 0);
+      vr.frame = 0;
+    } else if (spinning) {
+      // 回転中はフレーム時間を見て解像度を自動調整（重ければ下げ、余裕があれば上げる）
+      if (motion.dt > 0.04) vr.spinScale = Math.max(0.4, vr.spinScale * 0.92);
+      else if (motion.dt < 0.022) vr.spinScale = Math.min(1, vr.spinScale * 1.03);
+      traceFrame(Math.max(64, Math.round(fbW * vr.spinScale)), Math.max(32, Math.round(vs.steps * 0.6)), 0);
       vr.frame = 0;
     } else if (vr.frame < vr.kMax) {
-      traceFrame(fbW, vs.steps, 12, vr.frame);
+      traceFrame(fbW, vs.steps, vr.frame);
       vr.frame++;
     } else return;
     present();
-    statusEl.textContent = `${volume.label}  ${moving ? "preview" : `${vr.frame}/${vr.kMax}`}`;
+    statusEl.textContent = `${volume.label}  ${moving ? "preview" : spinning ? `♩=${motion.bpm}` : `${vr.frame}/${vr.kMax}`}`;
   }
 
+  // 自動回転：BPM に合わせて 1 拍ごとに速さがゆるく脈打つ（平均 7.5°/拍、48 拍＝12 小節で 1 周）
+  const motion = { bpm: 80, phase: 0, last: 0, dt: 1 / 60, beats: 0 };
   (function loop(now) {
-    if ($("spin").checked && !dragging) { view.yaw += 0.004; dirty = true; }
+    now = now || performance.now();
+    motion.dt = Math.min(0.1, Math.max(0.001, (now - (motion.last || now)) / 1000)); motion.last = now;
+    motion.beats += motion.dt * motion.bpm / 60;
+    if ($("spin").checked && !dragging) {
+      const bps = motion.bpm / 60;
+      motion.phase = (motion.phase + motion.dt * bps) % 1;
+      view.yaw += motion.dt * bps * (7.5 * Math.PI / 180) * (1 + 0.5 * Math.cos(2 * Math.PI * motion.phase));
+      dirty = true;
+    }
     if (mode === "points") { if (dirty) draw(); }
-    else if (gl && volRenderOK) renderVolume(now || performance.now());
+    else if (mode === "flow") { if (gl && volRenderOK) drawFlow(); }
+    else if (gl && volRenderOK) renderVolume(now);
     requestAnimationFrame(loop);
   })();
 
@@ -1003,29 +1182,36 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     slider($("sliders"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
   for (const [k, label, lo, hi, st, dg] of PARAMS3)
     slider($("sliders3"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
+  slider($("spinSliders"), "テンポ BPM", 40, 140, 1, 0, () => motion.bpm, v => { motion.bpm = v; });
   slider($("viewSliders"), "高さ倍率", 0, 1.2, 0.01, 2, () => view.height, v => { view.height = v; dirty = true; });
 
   // ver.2: ボリューム描画の設定
   const coarse = matchMedia("(pointer: coarse)").matches;
-  const vs = { steps: coarse ? 96 : 160, thr: 0.6, ior: 1.45, absK: 2.6,
-               conc: 32, alb: 0.75, g: 0.45, lightAz: -35, lightEl: 55, exposure: 1 };
+  const vs = { steps: coarse ? 96 : 160, thr: 0.6, ior: 1.45, absK: 2.6, exposure: 1 };
   const vset = k => v => { vs[k] = v; vr.parVer++; };
   slider($("volSliders"), "ステップ", 32, 320, 8, 0, () => vs.steps, vset("steps"));
   slider($("isoSliders"), "しきい値", 0.02, 0.98, 0.01, 2, () => vs.thr, vset("thr"));
   slider($("glassSliders"), "屈折率", 1.3, 1.6, 0.01, 2, () => vs.ior, vset("ior"));
   slider($("glassSliders"), "吸収の強さ", 0, 4, 0.01, 2, () => vs.absK, vset("absK"));
-  for (const [k, label, lo, hi, st, dg] of [["conc", "濃度", 2, 80, 0.5, 1], ["alb", "散乱/吸収", 0, 1, 0.01, 2],
-      ["g", "前方散乱 g", 0, 0.9, 0.01, 2], ["lightAz", "光 方位", -180, 180, 1, 0], ["lightEl", "光 仰角", -80, 85, 1, 0]])
-    slider($("inkSliders"), label, lo, hi, st, dg, () => vs[k], vset(k));
-  const INKS = [["紅と藍", "#d8487a", "#1c1757"], ["墨", "#8a8f99", "#0d0d12"], ["藍", "#4f8fd6", "#0b1e4d"],
-                ["翡翠", "#3fbf9a", "#063d33"], ["夕焼け", "#ffb347", "#8c1c3a"]];
-  INKS.forEach(([name], i) => $("inkPreset").append(new Option(`インク色: ${name}`, i)));
-  $("inkPreset").append(new Option("インク色: カスタム", ""));
-  $("inkPreset").addEventListener("change", e => {
-    if (e.target.value === "") return;
-    const [, a, b] = INKS[+e.target.value]; $("ink1").value = a; $("ink2").value = b; vr.parVer++;
-  });
-  for (const id of ["ink1", "ink2"]) $(id).addEventListener("input", () => { $("inkPreset").value = ""; vr.parVer++; });
+  // 流線の設定。形が変わる設定は再計算（少し待ってから）、見た目だけの設定は即時
+  const fs = { phi: 82, grid: coarse ? 52 : 60, thr: 0.45, steps: 320, alpha: 0.5, glow: 1 };
+  let lineTimer = null;
+  const fsetLines = k => v => { fs[k] = v; clearTimeout(lineTimer); lineTimer = setTimeout(requestLines, 150); };
+  const fsetLook = k => v => { fs[k] = v; };
+  slider($("flowSliders"), "流れの向き", 0, 90, 1, 0, () => fs.phi, fsetLines("phi"));
+  slider($("flowSliders"), "密度", 32, 110, 1, 0, () => fs.grid, fsetLines("grid"));
+  slider($("flowSliders"), "しきい値", 0.05, 0.95, 0.01, 2, () => fs.thr, fsetLines("thr"));
+  slider($("flowSliders"), "線の長さ", 40, 800, 10, 0, () => fs.steps, fsetLines("steps"));
+  slider($("flowSliders2"), "線の濃さ", 0.05, 1, 0.01, 2, () => fs.alpha, fsetLook("alpha"));
+  slider($("flowSliders2"), "光の粒", 0, 2, 0.01, 2, () => fs.glow, fsetLook("glow"));
+  const lineParams = () => ({ lid: ++flow.lid, phi: fs.phi, grid: Math.round(fs.grid), thr: fs.thr, steps: Math.round(fs.steps),
+                              tries: 60000, maxVerts: coarse ? 90000 : 140000, minSize: 0.16 });
+  const STYLES = [["墨流し", "#f3eee4", "#7a7f8a", "#111318"], ["紅と藍", "#f6efe8", "#e0507f", "#1c1757"],
+                  ["藍染", "#eef2f3", "#5b8fd0", "#0b1e4d"], ["翡翠", "#f1f4ef", "#4fbf9a", "#073b30"],
+                  ["夜光", "#05060b", "#1f6bff", "#c8f6ff"], ["金糸", "#0c0907", "#9c561a", "#ffe3a3"]];
+  pickList($("flowStyle"), STYLES, "スタイル", ([, b, c1, c2]) => { $("flowBg").value = b; $("ink1").value = c1; $("ink2").value = c2; },
+           ["flowBg", "ink1", "ink2"]);
+  $("flowStyle").value = "4";
   $("absorb").addEventListener("input", () => { vr.parVer++; });
   $("material").addEventListener("change", () => {
     $("glassOnly").hidden = $("material").value !== "glass"; $("metalOnly").hidden = $("material").value !== "mercury"; vr.parVer++;
@@ -1049,15 +1235,18 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
 
   let pointsStale = true;
   const volKey = () => JSON.stringify([q, $("volRes").value]);
+  const flowKey = () => volKey() + JSON.stringify(fs);
   function setMode(m) {
     if (m !== "points" && !volRenderOK) m = "points";
     mode = m; $("renderMode").value = m;
     $("volCommon").hidden = m === "points";
     $("isoPanel").hidden = m !== "iso";
-    $("inkPanel").hidden = m !== "ink";
+    $("flowPanel").hidden = m !== "flow";
+    $("volSliders").hidden = m !== "iso";
     $("pointView").hidden = $("pointColor").hidden = m !== "points";
     vr.sig = ""; dirty = true;
     if (m === "points") { if (pointsStale) rebuild(); else if (nPts) statusEl.textContent = pointsLabel; }
+    else if (m === "flow") { if (flow.key !== flowKey()) requestLines(); else statusEl.textContent = flow.label; }
     else if (volume.key !== volKey()) requestVolume();
     else if (volume.label) statusEl.textContent = volume.label;
   }
@@ -1112,7 +1301,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     statusEl.textContent = "見つかりませんでした。もう一度どうぞ";
   });
   $("save").addEventListener("click", () => {
-    if (mode === "points") draw(); else if (volume.ready) present();
+    if (mode === "points") draw(); else if (mode === "flow") drawFlow(); else if (volume.ready) present();
     const a = document.createElement("a"); a.download = `icon3d_${mode}_n${Math.round(q.n)}.png`; a.href = canvas.toDataURL(); a.click();
   });
 
@@ -1143,7 +1332,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       presetSel.value = ""; syncAll();
     }
     if (sp.get("mat") === "mercury" || sp.get("mat") === "glass") { $("material").value = sp.get("mat"); $("material").dispatchEvent(new Event("change")); }
-    setMode(["points", "iso", "ink"].includes(m0) ? m0 : (volRenderOK ? "iso" : "points"));
+    setMode(["points", "iso", "flow"].includes(m0) ? m0 : m0 === "ink" ? "flow" : (volRenderOK ? "iso" : "points"));
   }
 })();
 </script>
