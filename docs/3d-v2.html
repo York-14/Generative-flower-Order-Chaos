@@ -116,10 +116,22 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
           <option value="glass">材質: ガラス</option>
         </select>
         <div id="isoSliders"></div>
+        <div id="metalOnly">
+          <select id="metalPreset" aria-label="金属の色"></select>
+          <div class="colors"><label>金属の色<input type="color" id="metal" value="#e3e3e6"></label></div>
+        </div>
         <div id="glassOnly" hidden>
           <div id="glassSliders"></div>
           <div class="colors"><label>吸収色<input type="color" id="absorb" value="#3aa6c8"></label></div>
         </div>
+        <h4 style="margin-top:18px">背景と照明</h4>
+        <select id="envPreset" aria-label="背景と照明"></select>
+        <div class="colors">
+          <label>背景（上）<input type="color" id="envTop" value="#9c9ea8"></label>
+          <label>背景（下）<input type="color" id="envBot" value="#38393e"></label>
+          <label>照明の色<input type="color" id="envLight" value="#ffffff"></label>
+        </div>
+        <div id="isoExposure"></div>
       </div>
       <div id="inkPanel" hidden>
         <h4 style="margin-top:18px">インク</h4>
@@ -650,9 +662,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   `;
 
   const ISO_FS = VOL_HEAD + `
-    uniform float uThr, uIor, uAbsK; uniform vec3 uAbsCol; uniform int uMat;
+    uniform float uThr, uIor, uAbsK; uniform vec3 uAbsCol, uMetal, uBgTop, uBgBot, uTint; uniform int uMat;
     vec3 backdrop(vec3 v) {
-      vec3 c = mix(vec3(0.035, 0.037, 0.045), vec3(0.34, 0.35, 0.40), smoothstep(-0.7, 0.9, v.y));
+      vec3 c = mix(uBgBot, uBgTop, smoothstep(-0.7, 0.9, v.y));
       return c * (1.0 - 0.25 * smoothstep(0.2, 0.9, length(v.xy)));
     }
     vec3 softbox(vec3 v, vec3 dir, float r, vec3 col) {
@@ -662,10 +674,10 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     // スタジオ照明：グラデーション背景 + 柔らかい光源 3 つ（視点座標で固定）
     vec3 env(vec3 v) {
       vec3 c = backdrop(v) * 0.7;
-      c += softbox(v, vec3(-0.55, 0.75, 0.45), 0.34, vec3(4.0, 3.8, 3.5));   // キー：左上手前
-      c += softbox(v, vec3(0.95, 0.15, 0.25), 0.30, vec3(1.4, 1.8, 2.4));    // フィル：右、寒色
-      c += softbox(v, vec3(0.05, 0.35, -1.0), 0.45, vec3(1.6, 1.5, 1.4));    // リム：奥
-      c += vec3(0.10, 0.08, 0.06) * smoothstep(-0.1, -0.8, v.y);             // 床の照り返し
+      c += softbox(v, vec3(-0.55, 0.75, 0.45), 0.34, vec3(4.0, 3.8, 3.5) * uTint);   // キー：左上手前
+      c += softbox(v, vec3(0.95, 0.15, 0.25), 0.30, vec3(1.4, 1.8, 2.4) * uTint);    // フィル：右、寒色
+      c += softbox(v, vec3(0.05, 0.35, -1.0), 0.45, vec3(1.6, 1.5, 1.4) * uTint);    // リム：奥
+      c += uBgBot * 2.0 * smoothstep(-0.1, -0.8, v.y);                               // 床の照り返し
       return c;
     }
     // 反射方向に自分自身があるかを粗く調べる（自己遮蔽）
@@ -703,8 +715,8 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       vec3 refl = env(uRot * r) * occl(p + eps, r);
       vec3 col;
       if (uMat == 1) {
-        // 水銀：金属の反射のみ
-        vec3 F0 = vec3(0.78, 0.78, 0.80);
+        // 金属：反射のみ（F0 が金属の色）
+        vec3 F0 = uMetal;
         col = refl * (F0 + (1.0 - F0) * fr);
       } else {
         // ガラス：Schlick フレネル + 屈折 + 厚みに応じた Beer–Lambert 吸収
@@ -790,9 +802,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     void main() { gl_Position = vec4(v[gl_VertexID], 0.0, 1.0); uv = v[gl_VertexID] * 0.5 + 0.5; }`;
   const PRESENT_FS = `#version 300 es
     precision highp float;
-    in vec2 uv; out vec4 o; uniform sampler2D uTex; uniform int uTone;
+    in vec2 uv; out vec4 o; uniform sampler2D uTex; uniform int uTone; uniform float uExp;
     void main() {
-      vec3 c = texture(uTex, uv).rgb;
+      vec3 c = texture(uTex, uv).rgb * uExp;
       c = uTone == 1 ? 1.0 - exp(-c * 1.15) : clamp(c, 0.0, 1.0);
       o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
     }`;
@@ -853,6 +865,10 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       gl.uniform1f(uloc(pr, "uAbsK"), vs.absK);
       gl.uniform3fv(uloc(pr, "uAbsCol"), srgb2lin($("absorb").value));
       gl.uniform1i(uloc(pr, "uMat"), $("material").value === "mercury" ? 1 : 0);
+      gl.uniform3fv(uloc(pr, "uMetal"), srgb2lin($("metal").value));
+      gl.uniform3fv(uloc(pr, "uBgTop"), srgb2lin($("envTop").value));
+      gl.uniform3fv(uloc(pr, "uBgBot"), srgb2lin($("envBot").value));
+      gl.uniform3fv(uloc(pr, "uTint"), srgb2lin($("envLight").value));
     } else {
       // 光源は視点に対して固定（方位・仰角）。シェーダには物体座標で渡す
       const az = vs.lightAz * Math.PI / 180, el = vs.lightEl * Math.PI / 180;
@@ -881,6 +897,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, vr.tex);
     gl.uniform1i(uloc(vr.present, "uTex"), 0);
     gl.uniform1i(uloc(vr.present, "uTone"), mode === "iso" ? 1 : 0);
+    gl.uniform1f(uloc(vr.present, "uExp"), mode === "iso" ? vs.exposure : 1);
     gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
   }
 
@@ -991,7 +1008,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   // ver.2: ボリューム描画の設定
   const coarse = matchMedia("(pointer: coarse)").matches;
   const vs = { steps: coarse ? 96 : 160, thr: 0.6, ior: 1.45, absK: 2.6,
-               conc: 32, alb: 0.75, g: 0.45, lightAz: -35, lightEl: 55 };
+               conc: 32, alb: 0.75, g: 0.45, lightAz: -35, lightEl: 55, exposure: 1 };
   const vset = k => v => { vs[k] = v; vr.parVer++; };
   slider($("volSliders"), "ステップ", 32, 320, 8, 0, () => vs.steps, vset("steps"));
   slider($("isoSliders"), "しきい値", 0.02, 0.98, 0.01, 2, () => vs.thr, vset("thr"));
@@ -1010,7 +1027,25 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   });
   for (const id of ["ink1", "ink2"]) $(id).addEventListener("input", () => { $("inkPreset").value = ""; vr.parVer++; });
   $("absorb").addEventListener("input", () => { vr.parVer++; });
-  $("material").addEventListener("change", () => { $("glassOnly").hidden = $("material").value !== "glass"; vr.parVer++; });
+  $("material").addEventListener("change", () => {
+    $("glassOnly").hidden = $("material").value !== "glass"; $("metalOnly").hidden = $("material").value !== "mercury"; vr.parVer++;
+  });
+  // 金属の色（F0 を sRGB で表したもの）と、背景・照明のプリセット
+  const METALS = [["水銀", "#e3e3e6"], ["銀", "#fbfaf6"], ["金", "#ffda91"], ["銅", "#f9cfb9"],
+                  ["ローズゴールド", "#f7c6c2"], ["チタン", "#c1bab1"], ["黒鉄", "#7d7f84"]];
+  const ENVS = [["スタジオ", "#9c9ea8", "#38393e", "#ffffff"], ["白ホリゾント", "#f2f1ee", "#bdbbb6", "#ffffff"],
+                ["夜", "#1d2233", "#06070b", "#cfd8ff"], ["夕暮れ", "#e8a87c", "#3a2340", "#ffd2a6"],
+                ["森", "#9fbf9a", "#1f3324", "#f4ffe8"]];
+  function pickList(sel, list, label, apply, inputs) {
+    list.forEach(([name], i) => sel.append(new Option(`${label}: ${name}`, i)));
+    sel.append(new Option(`${label}: カスタム`, ""));
+    sel.addEventListener("change", () => { if (sel.value !== "") { apply(list[+sel.value]); vr.parVer++; } });
+    for (const id of inputs) $(id).addEventListener("input", () => { sel.value = ""; vr.parVer++; });
+  }
+  pickList($("metalPreset"), METALS, "金属", ([, c]) => { $("metal").value = c; }, ["metal"]);
+  pickList($("envPreset"), ENVS, "背景", ([, a, b, c]) => { $("envTop").value = a; $("envBot").value = b; $("envLight").value = c; },
+           ["envTop", "envBot", "envLight"]);
+  slider($("isoExposure"), "露出", 0.3, 3, 0.01, 2, () => vs.exposure, vset("exposure"));
 
   let pointsStale = true;
   const volKey = () => JSON.stringify([q, $("volRes").value]);
