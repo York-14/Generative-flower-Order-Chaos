@@ -105,17 +105,18 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       </div>
       <h4>形</h4>
       <select id="preset" aria-label="プリセット"></select>
+      <p class="hint" id="presetNote" style="margin:4px 0 0"></p>
       <div id="sliders"></div>
       <h4>3D の拡張</h4>
       <div id="sliders3"></div>
       <div id="isoPanel" hidden>
         <h4 style="margin-top:18px">等値面</h4>
         <select id="material" aria-label="材質">
-          <option value="glass">材質: ガラス</option>
           <option value="mercury">材質: 水銀</option>
+          <option value="glass">材質: ガラス</option>
         </select>
         <div id="isoSliders"></div>
-        <div id="glassOnly">
+        <div id="glassOnly" hidden>
           <div id="glassSliders"></div>
           <div class="colors"><label>吸収色<input type="color" id="absorb" value="#3aa6c8"></label></div>
         </div>
@@ -942,14 +943,30 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     ["kap", "κ 結合", -0.5, 0.5, 0.001, 3], ["mu", "μ 記憶", 0, 0.95, 0.001, 3],
     ["del", "δ 起伏", -1.5, 1.5, 0.001, 3], ["eps", "ε お椀", -1, 1, 0.001, 3],
   ];
+  // 自然のかたち：回転対称の「秩序」と、カオス軌道が刻む細部の「混沌」が同居するもの
   const PRESETS = [
-    ["Emperor's Cloak 3D", { lam: -2.08, alpha: 1.0, beta: -0.1, gamma: 0.167, omega: 0, n: 7, kap: 0.1, mu: 0.6, del: 0.5, eps: -0.2 }],
-    ["Starfish 3D", { lam: -2.34, alpha: 2.0, beta: 0.2, gamma: 0.1, omega: 0, n: 5, kap: 0.1, mu: 0.6, del: 0.5, eps: -0.2 }],
-    ["Sand Dollar 3D", { lam: -2.7, alpha: 5.0, beta: 1.5, gamma: 1.0, omega: 0, n: 6, kap: 0, mu: 0.6, del: 0.5, eps: -0.2 }],
-    ["Pentagon 3D", { lam: -1.806, alpha: 1.806, beta: 0, gamma: 1.0, omega: 0, n: 5, kap: 0, mu: 0.6, del: 0.5, eps: -0.2 }],
-    ["Clam Triple 3D", { lam: 1.56, alpha: -1.0, beta: 0.1, gamma: -0.82, omega: 0.12, n: 3, kap: 0, mu: 0.6, del: 0.5, eps: -0.2 }],
-    ["Fish 3D", { lam: -2.5, alpha: 5.0, beta: -1.9, gamma: 1.0, omega: 0.188, n: 5, kap: 0.3, mu: 0.8, del: 0.5, eps: -0.2 }],
+    ["クラゲ — Jellyfish", { n: 10, lam: 2.591, alpha: -4.072, beta: 1.106, gamma: -0.888, omega: 0.163, kap: -0.154, mu: 0.279, del: -0.719, eps: -0.432 },
+      "傘のひだは 10 回対称に整い、縁は不規則に波打つ。"],
+    ["薔薇 — Rose", { n: 5, lam: 2.564, alpha: -3.498, beta: 0.407, gamma: 1.121, omega: 0.085, kap: 0.083, mu: 0.442, del: 0.445, eps: 0.481 },
+      "ω ≠ 0 で鏡映が破れ、花弁が一方向に巻き込む 5 回対称。"],
+    ["百合 — Lily", { n: 3, lam: 2.287, alpha: -4.237, beta: -1.344, gamma: 0.181, omega: 0, kap: -0.193, mu: 0.775, del: -0.563, eps: -0.014 },
+      "単子葉植物の花と同じ 3 回対称のつぼみ。"],
+    ["菊 — Chrysanthemum", { n: 12, lam: -2.661, alpha: 3.61, beta: 0.31, gamma: -0.437, omega: 0, kap: -0.226, mu: 0.6, del: -0.138, eps: 0.289 },
+      "12 回対称に並ぶ小花の粒。中心ほど密になる。"],
+    ["蓮の花托 — Lotus Pod", { n: 10, lam: 2.285, alpha: -2.005, beta: -0.524, gamma: 1.167, omega: 0, kap: 0, mu: 0.679, del: 0.075, eps: 0.318 },
+      "同心円状に並ぶ穴。κ = 0 で平面の花がそのまま厚みを持つ。"],
+    ["イソギンチャク — Sea Anemone", { n: 11, lam: -2.007, alpha: 1.74, beta: 0.77, gamma: 1.022, omega: 0, kap: 0.111, mu: 0.491, del: -0.62, eps: 0.493 },
+      "放射状に伸びる触手。一本ごとの起伏はカオスが決める。"],
+    ["ウニの殻 — Urchin Test", { n: 11, lam: 2.723, alpha: -4.085, beta: 1.064, gamma: -0.668, omega: 0, kap: -0.259, mu: 0.464, del: 0.012, eps: 0.457 },
+      "ドーム状の殻に刻まれた放射状の溝。"],
+    ["ハイビスカス — Hibiscus", { n: 6, lam: -2.442, alpha: 4.305, beta: 1.447, gamma: -0.619, omega: 0.18, kap: -0.202, mu: 0.522, del: 0.843, eps: -0.379 },
+      "重なり合う 6 枚の花弁。δ が大きく、花弁が交互に反る。"],
+    ["朝顔 — Morning Glory", { n: 9, lam: -2.637, alpha: 4.544, beta: -0.323, gamma: 1.084, omega: 0, kap: -0.01, mu: 0.302, del: -0.305, eps: 0.003 },
+      "ひだを畳んだラッパ形。折り目は 9 回対称。"],
+    ["サンゴ — Coral", { n: 8, lam: 2.356, alpha: -4.973, beta: -0.914, gamma: 0.184, omega: 0.277, kap: -0.149, mu: 0.545, del: 0.347, eps: -0.279 },
+      "環状に群れて育つ、ねじれた枝の塊。"],
   ];
+
   const q = { ...PRESETS[0][1] };
   const statusEl = $("status"), presetSel = $("preset");
   const shows = [];
@@ -1020,7 +1037,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   PRESETS.forEach(([name], i) => presetSel.append(new Option(name, i)));
   presetSel.addEventListener("change", () => {
     if (presetSel.value !== "") { Object.assign(q, PRESETS[+presetSel.value][1]); syncAll(); rebuild(); }
+    presetNote();
   });
+  const presetNote = () => { $("presetNote").textContent = presetSel.value === "" ? "" : PRESETS[+presetSel.value][2]; };
   $("colorMode").addEventListener("change", () => { dirty = true; });
   $("count").value = matchMedia("(pointer: coarse)").matches ? "500000" : "1500000";
   $("count").addEventListener("change", rebuild);
@@ -1029,6 +1048,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   let pointsLabel = "";
   function rebuild() {
     if (!gl) return false;
+    presetNote();
     if (mode !== "points") { pointsStale = true; requestVolume(); return true; }
     pointsStale = false;
     const qq = { ...q, n: Math.round(q.n) };
@@ -1079,8 +1099,15 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   // 起動
   syncColor(); buildLUT();
   if (gl) {
-    uploadLUT(); presetSel.value = "0";
-    const m0 = new URLSearchParams(location.search).get("mode");
+    uploadLUT(); presetSel.value = "0"; presetNote();
+    const sp = new URLSearchParams(location.search), m0 = sp.get("mode");
+    // ?p=n,λ,α,β,γ,ω,κ,μ,δ,ε でパラメータを直接指定（共有用）
+    const pv = (sp.get("p") || "").split(",").map(Number);
+    if (pv.length === 10 && pv.every(Number.isFinite)) {
+      ["n", "lam", "alpha", "beta", "gamma", "omega", "kap", "mu", "del", "eps"].forEach((k, i) => { q[k] = pv[i]; });
+      presetSel.value = ""; syncAll();
+    }
+    if (sp.get("mat") === "mercury" || sp.get("mat") === "glass") { $("material").value = sp.get("mat"); $("material").dispatchEvent(new Event("change")); }
     setMode(["points", "iso", "ink"].includes(m0) ? m0 : (volRenderOK ? "iso" : "points"));
   }
 })();
