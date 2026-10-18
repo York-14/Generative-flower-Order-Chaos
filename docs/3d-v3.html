@@ -1,0 +1,1890 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Flower 3D v3</title>
+<meta name="description" content="対称カオス写像の 3D アトラクタを、点群・ガラス／金属の等値面・表面を流れる流線として WebGL2 で描く。">
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1c1b22; --muted: #5d5a68;
+  --border: #e4e1da; --accent: #b4366b; --code-bg: #f2efe9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+    --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+  --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.75 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 1.35rem; margin: 56px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.lead { color: var(--muted); font-size: 1.05rem; margin: 0 0 16px; }
+a { color: var(--accent); }
+nav { margin-bottom: 20px; font-size: 14px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.formula {
+  text-align: center; font-size: clamp(0.95rem, 3vw, 1.2rem); padding: 14px 8px; line-height: 1.9;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin: 16px 0;
+  font-family: "Times New Roman", serif; font-style: italic; overflow-x: auto;
+}
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .studio { grid-template-columns: 1fr; } }
+.canvas-wrap { background: #0b0b10; border-radius: 12px; overflow: hidden; aspect-ratio: 1; position: relative; }
+canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+canvas:active { cursor: grabbing; }
+#status { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: #9b98a8; font-family: ui-monospace, monospace; pointer-events: none; }
+#nogl { position: absolute; inset: 0; display: grid; place-items: center; color: #ccc; padding: 24px; text-align: center; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.panel h4 { margin: 14px 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+.panel h4:first-child { margin-top: 0; }
+.panel label { display: grid; grid-template-columns: 66px 1fr 54px; align-items: center; gap: 8px; font-size: 13px; margin: 5px 0; }
+.panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.panel output { font-family: ui-monospace, monospace; font-size: 12px; text-align: right; color: var(--muted); }
+.panel select, .panel button {
+  width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; margin-top: 8px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+}
+.panel button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.panel .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.panel .row.top button { margin-top: 0; }
+.panel .row.top + h4 { margin-top: 14px; }
+.panel .check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 10px; grid-template-columns: none; }
+.panel .colors { display: flex; gap: 8px; margin-top: 8px; }
+.panel .colors label { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0; font-size: 11px; color: var(--muted); flex: 1; }
+.panel input[type=color] { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--bg); cursor: pointer; }
+#swatch { height: 12px; border-radius: 6px; margin-top: 10px; border: 1px solid var(--border); }
+.hint { font-size: 13px; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0; display: block; overflow-x: auto; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="./">← 2D 版</a> ・ <a href="3d.html">3D 版（v1）</a> ・ <a href="3d-v2.html">ver.2</a></nav>
+  <h1>Generative Flower 3D <small style="font-size:.5em;color:var(--muted)">ver.3</small></h1>
+  <p class="lead">対称カオス写像に「高さ」の次元 w を加え、n 回回転対称（ω = 0 なら鏡映も）を保ったまま
+  立体のアトラクタとして描きます。ver.2 では軌道の密度を 3D ボリュームにして、ガラス／水銀の面や、水に溶けたインクとしても描けます。
+  ドラッグで回転、ホイール／ピンチで拡大縮小。</p>
+
+  <div class="studio">
+    <div class="canvas-wrap" id="wrap">
+      <canvas id="gl" aria-label="3D アトラクタ（ドラッグで回転）"></canvas>
+      <div id="status"></div>
+      <div id="nogl" hidden>このブラウザでは WebGL2 が使えないため、3D 表示ができません。</div>
+    </div>
+    <div class="panel">
+      <div class="row top">
+        <button id="random" class="primary">ランダム探索</button>
+        <button id="save">PNG 保存</button>
+      </div>
+      <h4>描画モード</h4>
+      <select id="renderMode" aria-label="描画モード">
+        <option value="points">点群</option>
+        <option value="iso">等値面（ガラス／水銀）</option>
+        <option value="flow">流線</option>
+        <option value="smoke">煙（流体）</option>
+      </select>
+      <div id="volCommon" hidden>
+        <select id="volRes" aria-label="ボリューム解像度">
+          <option value="128">ボリューム: 128³</option>
+          <option value="192">ボリューム: 192³</option>
+        </select>
+        <div id="volSliders"></div>
+      </div>
+      <h4>形</h4>
+      <select id="preset" aria-label="プリセット"></select>
+      <p class="hint" id="presetNote" style="margin:4px 0 0"></p>
+      <div id="sliders"></div>
+      <h4>3D の拡張</h4>
+      <div id="sliders3"></div>
+      <div id="isoPanel" hidden>
+        <h4 style="margin-top:18px">等値面</h4>
+        <select id="material" aria-label="材質">
+          <option value="mercury">材質: 水銀</option>
+          <option value="glass">材質: ガラス</option>
+        </select>
+        <div id="isoSliders"></div>
+        <div id="metalOnly">
+          <select id="metalPreset" aria-label="金属の色"></select>
+          <div class="colors"><label>金属の色<input type="color" id="metal" value="#e3e3e6"></label></div>
+        </div>
+        <div id="glassOnly" hidden>
+          <div id="glassSliders"></div>
+          <div class="colors"><label>吸収色<input type="color" id="absorb" value="#3aa6c8"></label></div>
+        </div>
+        <h4 style="margin-top:18px">背景と照明</h4>
+        <select id="envPreset" aria-label="背景と照明"></select>
+        <div class="colors">
+          <label>背景（上）<input type="color" id="envTop" value="#9c9ea8"></label>
+          <label>背景（下）<input type="color" id="envBot" value="#38393e"></label>
+          <label>照明の色<input type="color" id="envLight" value="#ffffff"></label>
+        </div>
+        <div id="isoExposure"></div>
+      </div>
+      <div id="smokePanel" hidden>
+        <h4 style="margin-top:18px">煙</h4>
+        <div class="row"><button id="smkPlay">一時停止</button><button id="smkReset">リセット</button></div>
+        <div id="smkSym"></div>
+        <select id="smkSource" aria-label="発生源">
+          <option value="release">発生源: 解放（彫刻がほどける）</option>
+          <option value="emit" selected>発生源: 継続放出</option>
+          <option value="filament">発生源: 流線放出（フィラメント方向に吹く）</option>
+        </select>
+        <select id="smkLook" aria-label="見た目">
+          <option value="smoke">見た目: 煙</option>
+          <option value="ink">見た目: 水中のインク</option>
+        </select>
+        <div class="colors"><label>色<input type="color" id="smkCol" value="#ece9e3"></label></div>
+        <div id="smkLookSliders"></div>
+        <label class="check"><input type="checkbox" id="smkTemp"> 温度で色づける</label>
+        <label class="check"><input type="checkbox" id="smkStir"> かき混ぜ（ドラッグで流れを起こす）</label>
+        <h4 style="margin-top:18px">流体</h4>
+        <div id="smkSliders"></div>
+        <select id="smkGrid" aria-label="格子">
+          <option value="64">格子: 64³</option>
+          <option value="96">格子: 96³</option>
+        </select>
+        <label class="check"><input type="checkbox" id="smkOpen" checked> 上面を開放</label>
+        <label class="check"><input type="checkbox" id="smkAuto" checked> 自動品質（重いときは解像度と反復を下げる）</label>
+      </div>
+      <div id="flowPanel" hidden>
+        <h4 style="margin-top:18px">流線</h4>
+        <div id="flowSliders"></div>
+        <label class="check"><input type="checkbox" id="flowAnim" checked> 流れのアニメーション（テンポに同期）</label>
+        <div id="flowSliders2"></div>
+        <h4 style="margin-top:18px">スタイル</h4>
+        <select id="flowStyle" aria-label="スタイル"></select>
+        <div class="colors">
+          <label>背景<input type="color" id="flowBg" value="#05060b"></label>
+          <label>線（疎）<input type="color" id="ink1" value="#1f6bff"></label>
+          <label>線（密）<input type="color" id="ink2" value="#c8f6ff"></label>
+        </div>
+      </div>
+      <h4 style="margin-top:18px">表示</h4>
+      <div id="viewSliders"></div>
+      <div id="pointView">
+      <select id="colorMode" aria-label="色の付け方">
+        <option value="height">色 = 高さ（w）</option>
+        <option value="density">色 = 密度</option>
+        <option value="radius">色 = 中心からの距離</option>
+      </select>
+      <select id="count" aria-label="点の数">
+        <option value="500000">点の数: 50 万</option>
+        <option value="1500000">点の数: 150 万</option>
+        <option value="3000000">点の数: 300 万</option>
+      </select>
+      </div>
+      <label class="check"><input type="checkbox" id="spin" checked> 自動回転</label>
+      <div id="spinSliders"></div>
+      <div id="pointColor">
+      <h4 style="margin-top:18px">色彩</h4>
+      <select id="palette" aria-label="パレット"></select>
+      <div class="colors" id="customColors" hidden>
+        <label>暗部<input type="color" id="c1" value="#1a0b3d"></label>
+        <label>中間<input type="color" id="c2" value="#d0457a"></label>
+        <label>明部<input type="color" id="c3" value="#fff3c4"></label>
+      </div>
+      <div id="colorSliders"></div>
+      <div class="colors"><label>背景<input type="color" id="bg" value="#0b0b10"></label></div>
+      <div id="swatch"></div>
+      <button id="resetColor">色をリセット</button>
+      <p class="hint">色彩の設定は 2D 版と共有されます。</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>3D への拡張</h2>
+  <p>平面の写像（z は複素数）に、実数の高さ w を加えた 3 次元の写像です。</p>
+  <div class="formula">
+    z<sub>t+1</sub> = ( λ + κ w<sub>t</sub> + α|z|² + β Re(z<sup>n</sup>) + iω ) z + γ z̄<sup>n−1</sup><br>
+    w<sub>t+1</sub> = μ w<sub>t</sub> + δ |z| cos(n · arg z) + ε |z|²
+  </div>
+  <table>
+    <tr><th>パラメータ</th><th>役割</th></tr>
+    <tr><td>κ（結合）</td><td>高さ w が平面の動きに戻ってくる強さ。0 なら平面の花はそのままで、高さだけが付く。0 以外では形そのものが立体的に変わる。</td></tr>
+    <tr><td>μ（記憶）</td><td>高さが過去をどれだけ覚えているか。大きいほど層が厚く、なめらかな起伏になる。</td></tr>
+    <tr><td>δ（花弁の起伏）</td><td>花びらの向き cos(n·arg z) に応じて上下させる。n 枚の花弁が交互に反り返る。</td></tr>
+    <tr><td>ε（お椀形）</td><td>中心からの距離に応じた上下。負ならお椀、正ならドーム状。</td></tr>
+  </table>
+  <p><strong>対称性が保たれる理由：</strong> w の更新式は |z|、cos(n·arg z)、|z|² という
+  「z を 2π/n 回しても変わらない量」だけでできています。そのため平面の写像の回転対称 Z<sub>n</sub> が、
+  そのまま縦軸まわりの回転対称になります。cos は偶関数なので、ω = 0 なら鏡映（z → z̄）でも不変で、二面体群 D<sub>n</sub> の対称性が残ります。</p>
+  <p><strong>描画：</strong> WebGL2 で軌道の点を浮動小数点バッファに加算合成して密度を測り、
+  2D 版と同じパレット・ガンマ・露出でトーンマッピングしています（外部ライブラリなし）。</p>
+
+  <h2>ver.2：ボリューム描画</h2>
+  <p>軌道の点を 3D ヒストグラム（128³ または 192³）に数え上げ、密度の場として描きます。
+  各点は n 回回転（ω = 0 なら鏡映も）で複製してから 8 近傍のボクセルに振り分けるので、サンプル数が 2n 倍になり、
+  格子の向きによる偏りも出にくくなります。log(1 + count) で圧縮し、σ ≈ 1 ボクセルのガウスぼかしをかけて、
+  WebGL2 の 3D テクスチャ（R16F・線形補間）に入れます。計算は Web Worker で行うので操作は止まりません。</p>
+  <table>
+    <tr><th>モード</th><th>描き方</th></tr>
+    <tr><td>等値面（ガラス）</td><td>密度がしきい値を超える面をレイマーチング＋二分探索で求め、法線は密度の勾配から計算。
+      Schlick のフレネル、屈折（屈折率 1.30–1.60）、内部を通った厚みに応じた Beer–Lambert 吸収。しきい値は「占有ボクセルのうち下位何割を除くか」で、形が変わっても同じ感覚で使えます。</td></tr>
+    <tr><td>等値面（水銀）</td><td>同じ面を金属の反射（F0 ≈ 0.78）だけで描画。周囲はプロシージャルなスタジオ照明。</td></tr>
+    <tr><td>流線</td><td>密度の勾配 ∇ρ と、方位方向・縦方向を混ぜた向き d の外積 v = ∇ρ × d を流れの場にして積分した線。
+      v は ∇ρ に直交するので、線はいつも形の表面（等値面）の上を走ります。「流れの向き」が 90° なら等高線のように形を巻き、0° なら花弁に沿って縦に流れます。
+      線どうしの間隔は格子で保ち、1 本ごとに n 回回転（＋鏡映）で複製するので対称性は崩れません。線上を進む光の粒はテンポに同期します。</td></tr>
+  </table>
+  <p>ドラッグ中は半分の解像度・少ないステップで描き、止まると全解像度でジッターをずらしながら 24 枚を平均して滑らかにします。
+  3D テクスチャが使えない環境では点群モードだけになります。</p>
+
+  <h2>ver.3：煙（流体）</h2>
+  <p>アトラクタの密度を煙の発生源にして、非圧縮性流体（Stable Fluids）を GPU 上で解きます。格子は 64³（または 96³）で、
+  WebGL2 では 3D テクスチャに描けないため、z 方向の各スライスを 2D のタイルとして並べたアトラス 1 枚に格納しています。</p>
+  <table>
+    <tr><th>手順</th><th>内容</th></tr>
+    <tr><td>1. 注入</td><td>発生源 S から煙密度 ρ と温度 T を加える（流線放出では、写像のヤコビアンで求めたフィラメント方向に初速も）</td></tr>
+    <tr><td>2. 速度の移流</td><td>セミラグランジュ法＋MacCormack 補正（近傍の範囲に制限して振動を防ぐ）</td></tr>
+    <tr><td>3. 浮力</td><td>f = (−α ρ + β (T − T<sub>amb</sub>)) ŵ。「上」はアトラクタの高さ軸 w</td></tr>
+    <tr><td>4. 渦度閉じ込め</td><td>|ω| の勾配方向 N に対して ε (N × ω) を加え、細かな巻き込みを保つ</td></tr>
+    <tr><td>5. 非圧縮化</td><td>発散 → 圧力の Jacobi 反復 → 圧力勾配を引く。壁は閉じた箱、上面だけ開放も可</td></tr>
+    <tr><td>6. ρ, T の移流拡散</td><td>MacCormack で移流、陰的 Jacobi で拡散、減衰</td></tr>
+    <tr><td>対称性の保持</td><td>ρ と u を n 回回転（ω = 0 なら鏡映も）で平均した場と補間。0 で乱流、1 で対称な煙の花</td></tr>
+  </table>
+  <p>描画は ver.2 のインク用ボリュームレンダラ（前から後ろへの合成、シャドウレイの単一散乱、Henyey–Greenstein、ジッター）を煙の密度に使っています。
+  重いときは描画の解像度・ステップ数と Jacobi 回数を自動で下げます。float の描画先が使えない環境では煙モードは選べません。</p>
+
+  <footer>Source: <a href="https://github.com/York-14/Generative-flower-Order-Chaos">github.com/York-14/Generative-flower-Order-Chaos</a></footer>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+
+  // ==================================================================================
+  // 3D 写像
+  // ==================================================================================
+  let NX = 0, NY = 0, NW = 0;
+  function step(q, x, y, w) {
+    const zz = x * x + y * y;
+    let zr = x, zi = y;                                   // z^(n-1)
+    for (let i = 1; i < q.n - 1; i++) { const t = zr * x - zi * y; zi = zr * y + zi * x; zr = t; }
+    const ren = zr * x - zi * y;                          // Re(z^n) = |z|^n cos(nθ)
+    const r = Math.sqrt(zz), cosn = r > 1e-12 ? ren / Math.pow(r, q.n) : 0;
+    const p = q.lam + q.kap * w + q.alpha * zz + q.beta * ren;
+    NX = p * x - q.omega * y + q.gamma * zr;
+    NY = p * y + q.omega * x - q.gamma * zi;
+    NW = q.mu * w + q.del * r * cosn + q.eps * zz;
+  }
+
+  // 過渡を捨てて有界性を確認、境界半径と w の範囲を推定
+  function probe(q, N = 20000) {
+    let x = 0.01, y = 0.003, w = 0, R = 0;
+    for (let i = 0; i < N; i++) {
+      step(q, x, y, w); x = NX; y = NY; w = NW;
+      if (!(Math.abs(x) + Math.abs(y) + Math.abs(w) < 1e4)) return null;
+      if (i > 2000) { const r = x * x + y * y; if (r > R) R = r; }
+    }
+    R = Math.sqrt(R);
+    return R > 1e-6 ? { R, x, y, w } : null;
+  }
+
+  // 3D 箱数え次元（32³ と 64³）で、点・閉曲線・塗りつぶしを除外
+  function quality(q, pr) {
+    const cells = new Set(), cells2 = new Set(), xy = new Set();
+    let x = pr.x, y = pr.y, w = pr.w, wmin = Infinity, wmax = -Infinity;
+    const pts = [];
+    for (let i = 0; i < 40000; i++) {
+      step(q, x, y, w); x = NX; y = NY; w = NW;
+      pts.push(x, y, w); if (w < wmin) wmin = w; if (w > wmax) wmax = w;
+    }
+    const wr = Math.max(wmax - wmin, 1e-9);
+    for (let i = 0; i < pts.length; i += 3) {
+      const a = (pts[i] / pr.R + 1) / 2, b = (pts[i + 1] / pr.R + 1) / 2, c = (pts[i + 2] - wmin) / wr;
+      xy.add(((a * 31) | 0) * 32 + ((b * 31) | 0));
+      cells.add(((a * 31) | 0) * 4096 + ((b * 31) | 0) * 64 + ((c * 31) | 0));
+      cells2.add(((a * 63) | 0) * 65536 + ((b * 63) | 0) * 256 + ((c * 63) | 0));
+    }
+    // 最大 Lyapunov 指数（差分ベクトルを毎ステップ正規化）。準周期・周期軌道を除外する
+    const d0 = 1e-8; let x2 = x + d0, y2 = y, w2 = w, lsum = 0;
+    for (let i = 0; i < 2000; i++) {
+      step(q, x, y, w); const ax = NX, ay = NY, aw = NW;
+      step(q, x2, y2, w2);
+      const dx = NX - ax, dy = NY - ay, dw = NW - aw, dd = Math.hypot(dx, dy, dw) || 1e-300;
+      lsum += Math.log(dd / d0);
+      x = ax; y = ay; w = aw; x2 = ax + dx * d0 / dd; y2 = ay + dy * d0 / dd; w2 = aw + dw * d0 / dd;
+    }
+    return { D: Math.log2(cells2.size / cells.size), wr: wr / pr.R, n2: cells.size,
+             xy: xy.size / (Math.PI * 16 * 16), lyap: lsum / 2000 };
+  }
+
+  function genPoints(q, N, pr) {
+    const P = new Float32Array(N * 3);
+    let x = pr.x, y = pr.y, w = pr.w, ws = 0;
+    for (let i = 0; i < N; i++) {
+      step(q, x, y, w); x = NX; y = NY; w = NW;
+      if (!(Math.abs(x) + Math.abs(y) + Math.abs(w) < 1e4)) { N = i; break; }
+      P[i * 3] = x / pr.R; P[i * 3 + 1] = y / pr.R; P[i * 3 + 2] = w; ws += w;
+    }
+    // 高さは 1–99 パーセンタイルで [-1, 1] に正規化
+    const samp = [];
+    for (let i = 0; i < N; i += Math.max(1, (N / 4000) | 0)) samp.push(P[i * 3 + 2]);
+    samp.sort((a, b) => a - b);
+    const lo = samp[(samp.length * 0.01) | 0], hi = samp[(samp.length * 0.99) | 0];
+    const mid = (lo + hi) / 2, half = Math.max((hi - lo) / 2, 1e-6);
+    for (let i = 0; i < N; i++) P[i * 3 + 2] = (P[i * 3 + 2] - mid) / half;
+    return { P, N };
+  }
+
+  // ==================================================================================
+  // 色彩（2D 版と同じ定義・同じ保存先）
+  // ==================================================================================
+  const PALETTES = {
+    magma:   ["マグマ", [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]]],
+    inferno: ["インフェルノ", [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]]],
+    viridis: ["ビリディス", [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]]],
+    ocean:   ["氷・海", [[2, 6, 20], [10, 40, 90], [30, 110, 170], [120, 200, 230], [240, 252, 255]]],
+    sakura:  ["桜", [[10, 4, 10], [90, 30, 70], [200, 90, 140], [250, 170, 200], [255, 240, 245]]],
+    gold:    ["金箔", [[8, 5, 0], [80, 45, 5], [170, 110, 20], [235, 190, 80], [255, 250, 220]]],
+    emerald: ["翡翠", [[0, 8, 6], [5, 60, 45], [20, 140, 100], [110, 220, 170], [235, 255, 245]]],
+    mono:    ["モノクロ", [[0, 0, 0], [64, 64, 64], [128, 128, 128], [192, 192, 192], [255, 255, 255]]],
+    ink:     ["墨（白背景向け）", [[255, 255, 255], [180, 180, 190], [110, 110, 125], [50, 50, 60], [0, 0, 0]]],
+    custom:  ["カスタム（3 色）", null],
+  };
+  const COLOR_DEFAULT = { palette: "magma", c1: "#1a0b3d", c2: "#d0457a", c3: "#fff3c4",
+                          hue: 0, gamma: 0.8, exposure: 1, bg: "#0b0b10" };
+  const color = { ...COLOR_DEFAULT, ...(store.get("gfoc.color.v1") || {}) };
+  const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const LUT = new Uint8Array(256 * 4);
+  function buildLUT() {
+    const stops = color.palette === "custom"
+      ? [hex2rgb(color.c1), hex2rgb(color.c2), hex2rgb(color.c3)] : PALETTES[color.palette][1];
+    const a = Math.cos(color.hue * Math.PI / 180), b = Math.sin(color.hue * Math.PI / 180);
+    const M = [.213 + .787 * a - .213 * b, .715 - .715 * a - .715 * b, .072 - .072 * a + .928 * b,
+               .213 - .213 * a + .143 * b, .715 + .285 * a + .140 * b, .072 - .072 * a - .283 * b,
+               .213 - .213 * a - .787 * b, .715 - .715 * a + .715 * b, .072 + .928 * a + .072 * b];
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255 * (stops.length - 1), j = Math.min(stops.length - 2, Math.floor(t)), f = t - j;
+      const c = [0, 1, 2].map(k => stops[j][k] + f * (stops[j + 1][k] - stops[j][k]));
+      for (let k = 0; k < 3; k++)
+        LUT[i * 4 + k] = Math.max(0, Math.min(255, M[k * 3] * c[0] + M[k * 3 + 1] * c[1] + M[k * 3 + 2] * c[2]));
+      LUT[i * 4 + 3] = 255;
+    }
+    const g = [];
+    for (let i = 0; i <= 8; i++) { const k = Math.round(i / 8 * 255) * 4; g.push(`rgb(${LUT[k]},${LUT[k + 1]},${LUT[k + 2]}) ${i * 12.5}%`); }
+    $("swatch").style.background = `linear-gradient(90deg, ${g.join(",")})`;
+    $("wrap").style.background = color.bg;
+  }
+
+  // ==================================================================================
+  // WebGL2
+  // ==================================================================================
+  const canvas = $("gl");
+  const gl = canvas.getContext("webgl2", { antialias: true, premultipliedAlpha: false });
+  if (!gl) { $("nogl").hidden = false; }
+  const floatOK = gl && !!gl.getExtension("EXT_color_buffer_float");
+
+  function compile(vs, fs) {
+    const pr = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      gl.attachShader(pr, s);
+    }
+    gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    return pr;
+  }
+
+  let progPts, progComp, vao, vbo, fbo, accTex, lutTex, quadVao, nPts = 0, fbW = 0;
+  const U = {};
+  if (gl) {
+    progPts = compile(`#version 300 es
+      in vec3 aPos;
+      uniform mat3 uRot; uniform float uH, uCam, uSize; uniform int uMode;
+      out vec2 vAttr;
+      void main() {
+        vec3 p = uRot * vec3(aPos.xy, aPos.z * uH);
+        float z = uCam - p.z;
+        gl_Position = vec4(p.xy * 2.5 / z, 0.0, 1.0);
+        gl_PointSize = uSize;
+        float h = uMode == 2 ? length(aPos.xy) : aPos.z * 0.5 + 0.5;
+        vAttr = vec2(clamp(h, 0.0, 1.0), clamp(1.5 - z / uCam, 0.65, 1.0));
+      }`, `#version 300 es
+      precision highp float;
+      in vec2 vAttr; uniform float uW; out vec4 o;
+      void main() { o = vec4(uW, uW * vAttr.x, uW * vAttr.y, 0.0); }`);
+    progComp = compile(`#version 300 es
+      const vec2 v[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+      out vec2 uv;
+      void main() { gl_Position = vec4(v[gl_VertexID], 0.0, 1.0); uv = v[gl_VertexID] * 0.5 + 0.5; }`, `#version 300 es
+      precision highp float;
+      in vec2 uv; out vec4 o;
+      uniform sampler2D uAcc, uLut; uniform float uGain, uGamma, uExp; uniform vec3 uBg; uniform int uMode;
+      void main() {
+        vec4 a = texture(uAcc, uv);
+        float d = a.r;
+        if (d <= 0.0) { o = vec4(uBg, 1.0); return; }
+        float v = min(1.0, pow(1.0 - exp(-d * uGain), uGamma) * uExp);
+        float shade = a.b / d;
+        vec3 col; float al;
+        if (uMode == 1) { col = texture(uLut, vec2(v, 0.5)).rgb; al = min(1.0, v * 2.5); }
+        else { col = texture(uLut, vec2(mix(0.3, 1.0, a.g / d), 0.5)).rgb * shade; al = min(1.0, v * 2.5); }
+        o = vec4(mix(uBg, col, al), 1.0);
+      }`);
+    for (const n of ["uRot", "uH", "uCam", "uSize", "uMode", "uW"]) U[n] = gl.getUniformLocation(progPts, n);
+    for (const n of ["uAcc", "uLut", "uGain", "uGamma", "uExp", "uBg", "uMode"]) U["c_" + n] = gl.getUniformLocation(progComp, n);
+    vao = gl.createVertexArray(); vbo = gl.createBuffer();
+    gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    const loc = gl.getAttribLocation(progPts, "aPos");
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    quadVao = gl.createVertexArray();
+    lutTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, lutTex);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+      gl.texParameteri(gl.TEXTURE_2D, k, v);
+    fbo = gl.createFramebuffer(); accTex = gl.createTexture();
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = Math.min(1400, Math.round(canvas.clientWidth * dpr)) || 600;
+    if (W === fbW) return;
+    fbW = W; canvas.width = canvas.height = W;
+    gl.bindTexture(gl.TEXTURE_2D, accTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, floatOK ? gl.RGBA16F : gl.RGBA8, W, W, 0, gl.RGBA, floatOK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, accTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    dirty = true;
+  }
+
+  // ==================================================================================
+  // 視点
+  // ==================================================================================
+  const view = { yaw: 0.6, pitch: -0.9, zoom: 1, height: 0.35 };
+  const COLOR_MODES = { height: 0, density: 1, radius: 2 };
+  let dirty = true;
+
+  function rotMat() {
+    const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw), cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+    // Rz(yaw) の後に Rx(pitch)。列優先で渡す
+    return new Float32Array([cy, sy * cp, sy * sp, -sy, cy * cp, cy * sp, 0, -sp, cp]);
+  }
+
+  function draw() {
+    if (!gl || !nPts) return;
+    resize();
+    const W = fbW, mode = COLOR_MODES[$("colorMode").value];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, W, W);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(progPts);
+    gl.uniformMatrix3fv(U.uRot, false, rotMat());
+    gl.uniform1f(U.uH, view.height);
+    gl.uniform1f(U.uCam, 3.2 / view.zoom);
+    gl.uniform1f(U.uSize, Math.max(1, W / 700));
+    gl.uniform1i(U.uMode, mode);
+    gl.uniform1f(U.uW, floatOK ? 1 : 1 / 255);
+    gl.bindVertexArray(vao); gl.drawArrays(gl.POINTS, 0, nPts); gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, W, W);
+    gl.useProgram(progComp);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, accTex); gl.uniform1i(U.c_uAcc, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, lutTex); gl.uniform1i(U.c_uLut, 1);
+    // 平均的な画素の点数が 1 前後になるよう正規化
+    const gain = (W * W * 0.12) / nPts * (floatOK ? 1 : 255) / Math.max(1, W / 700) ** 2;
+    gl.uniform1f(U.c_uGain, gain);
+    gl.uniform1f(U.c_uGamma, color.gamma);
+    gl.uniform1f(U.c_uExp, color.exposure);
+    gl.uniform3fv(U.c_uBg, hex2rgb(color.bg).map(v => v / 255));
+    gl.uniform1i(U.c_uMode, mode);
+    gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+    dirty = false;
+  }
+
+  function uploadLUT() {
+    if (!gl) return;
+    gl.bindTexture(gl.TEXTURE_2D, lutTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, LUT);
+    dirty = true;
+  }
+
+  // ポインタ操作（ドラッグ回転・ピンチ／ホイール拡大）
+  const ptrs = new Map(); let dragging = false, pinch0 = 0, zoom0 = 1;
+  let mode = "points";
+  // ==================================================================================
+  // ver.2: 3D 密度ボリューム（Web Worker で生成）
+  // ==================================================================================
+  // 体積の範囲（物体座標）：x, y ∈ [-VB, VB]、正規化した w ∈ [-VW, VW]
+  const VB = 1.08, VW = 1.25;
+
+  // Worker 本体。toString() して Blob から起動するので、外側の変数は参照しない
+  function volumeWorker() {
+    let NX = 0, NY = 0, NW = 0;
+    function step(q, x, y, w) {
+      const zz = x * x + y * y;
+      let zr = x, zi = y;
+      for (let i = 1; i < q.n - 1; i++) { const t = zr * x - zi * y; zi = zr * y + zi * x; zr = t; }
+      const ren = zr * x - zi * y;
+      const r = Math.sqrt(zz), cosn = r > 1e-12 ? ren / Math.pow(r, q.n) : 0;
+      const p = q.lam + q.kap * w + q.alpha * zz + q.beta * ren;
+      NX = p * x - q.omega * y + q.gamma * zr;
+      NY = p * y + q.omega * x - q.gamma * zi;
+      NW = q.mu * w + q.del * r * cosn + q.eps * zz;
+    }
+    const ok = (x, y, w) => Math.abs(x) + Math.abs(y) + Math.abs(w) < 1e4;
+
+    // 分離可能な 3D ガウスぼかし（σ = 1 ボクセル、半径 2）
+    function blur(a, res) {
+      const k = [Math.exp(-2), Math.exp(-0.5), 1, Math.exp(-0.5), Math.exp(-2)];
+      const ks = k.reduce((s, v) => s + v, 0); for (let i = 0; i < 5; i++) k[i] /= ks;
+      let src = a, dst = new Float32Array(a.length);
+      for (const stride of [1, res, res * res]) {
+        for (let z = 0; z < res; z++) for (let y = 0; y < res; y++) {
+          const base = (z * res + y) * res;
+          for (let x = 0; x < res; x++) {
+            const i = base + x, c = stride === 1 ? x : stride === res ? y : z;
+            let s = 0;
+            for (let o = -2; o <= 2; o++) { const cc = c + o; if (cc >= 0 && cc < res) s += k[o + 2] * src[i + o * stride]; }
+            dst[i] = s;
+          }
+        }
+        [src, dst] = [dst, src];
+      }
+      return src;
+    }
+
+    // ---- 流線：密度場から作る「形の表面に沿う」ベクトル場を積分する ----
+    let store = null;
+    function makeLines(L) {
+      const { res, vol, quant, n, mirror, VB, VW } = store;
+      const r2 = res * res, sxy = res / (2 * VB), sw = res / (2 * VW);
+      const sample = (x, y, z) => {
+        const fx = (x + VB) * sxy - 0.5, fy = (y + VB) * sxy - 0.5, fz = (z + VW) * sw - 0.5;
+        const ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+        if (ix < 0 || iy < 0 || iz < 0 || ix >= res - 1 || iy >= res - 1 || iz >= res - 1) return 0;
+        const ax = fx - ix, ay = fy - iy, az = fz - iz, i = iz * r2 + iy * res + ix;
+        const c00 = vol[i] + (vol[i + 1] - vol[i]) * ax, c10 = vol[i + res] + (vol[i + res + 1] - vol[i + res]) * ax;
+        const c01 = vol[i + r2] + (vol[i + r2 + 1] - vol[i + r2]) * ax, c11 = vol[i + r2 + res] + (vol[i + r2 + res + 1] - vol[i + r2 + res]) * ax;
+        const c0 = c00 + (c10 - c00) * ay, c1 = c01 + (c11 - c01) * ay;
+        return c0 + (c1 - c0) * az;
+      };
+      const ex = 2 * VB / res, ez = 2 * VW / res;
+      const cphi = Math.cos(L.phi * Math.PI / 180), sphi = Math.sin(L.phi * Math.PI / 180);
+      // v = ∇ρ × (cosφ e_θ + sinφ e_z)。∇ρ に直交するので線は等値面の上を走り、回転・鏡映と可換
+      const V = [0, 0, 0];
+      function field(x, y, z) {
+        const gx = (sample(x + ex, y, z) - sample(x - ex, y, z)) / ex;
+        const gy = (sample(x, y + ex, z) - sample(x, y - ex, z)) / ex;
+        const gz = (sample(x, y, z + ez) - sample(x, y, z - ez)) / ez;
+        const r = Math.hypot(x, y);
+        if (r < 1e-4) return false;
+        const dx = -y / r * cphi, dy = x / r * cphi, dz = sphi;
+        let vx = gy * dz - gz * dy, vy = gz * dx - gx * dz, vz = gx * dy - gy * dx;
+        const m = Math.hypot(vx, vy, vz);
+        if (m < 1e-6) return false;
+        V[0] = vx / m; V[1] = vy / m; V[2] = vz / m; return true;
+      }
+      const qv = t => { const i = Math.min(99.999, t * 100), k = Math.floor(i); return quant[k] + (quant[k + 1] - quant[k]) * (i - k); };
+      const thrSeed = qv(L.thr), thrStop = thrSeed * 0.6;
+      // 間隔を保つための占有格子（全ての対称像を書き込む）
+      const G = L.grid, occ = new Int32Array(G * G * G).fill(-1), occStep = new Int32Array(G * G * G);
+      const C = [], S = [];
+      for (let k = 0; k < n; k++) { C.push(Math.cos(2 * Math.PI * k / n)); S.push(Math.sin(2 * Math.PI * k / n)); }
+      const cellOf = (x, y, z) => {
+        const cx = Math.floor((x + VB) / (2 * VB) * G), cy = Math.floor((y + VB) / (2 * VB) * G), cz = Math.floor((z + VW) / (2 * VW) * G);
+        return cx < 0 || cy < 0 || cz < 0 || cx >= G || cy >= G || cz >= G ? -1 : (cz * G + cy) * G + cx;
+      };
+      const mark = (x, y, z, id, st) => {
+        for (let k = 0; k < n; k++) for (let m = 0; m < (mirror ? 2 : 1); m++) {
+          const yy = m ? -y : y, c = cellOf(C[k] * x - S[k] * yy, S[k] * x + C[k] * yy, z);
+          if (c >= 0 && occ[c] === -1) { occ[c] = id; occStep[c] = st; }
+        }
+      };
+      const h = 0.7 * ex, maxSteps = L.steps;
+      function trace(x, y, z, dir, id, out) {
+        let st = 0;
+        while (st < maxSteps) {
+          if (!field(x, y, z)) break;
+          const mx = x + V[0] * h * 0.5 * dir, my = y + V[1] * h * 0.5 * dir, mz = z + V[2] * h * 0.5 * dir;
+          if (!field(mx, my, mz)) break;
+          x += V[0] * h * dir; y += V[1] * h * dir; z += V[2] * h * dir;
+          if (Math.abs(x) > VB || Math.abs(y) > VB || Math.abs(z) > VW) break;
+          if (sample(x, y, z) < thrStop) break;
+          const c = cellOf(x, y, z);
+          if (c < 0) break;
+          if (occ[c] !== -1 && (occ[c] !== id || st - occStep[c] > 12)) break;
+          out.push(x, y, z); st++;
+          if (st % 2 === 0) mark(x, y, z, id, st);
+        }
+      }
+      const lines = [];
+      let id = 0, verts = 0;
+      for (let a = 0; a < L.tries && verts < L.maxVerts; a++) {
+        const r = 0.1 + Math.sqrt(Math.random()) * 0.88, t = Math.random() * 2 * Math.PI;
+        const x = r * Math.cos(t), y = r * Math.sin(t), z = (Math.random() * 2 - 1) * VW * 0.95;
+        if (sample(x, y, z) < thrSeed) continue;
+        const c = cellOf(x, y, z);
+        if (c < 0 || occ[c] !== -1) continue;
+        const fw = [], bw = [];
+        trace(x, y, z, 1, id, fw); trace(x, y, z, -1, id, bw);
+        const np = fw.length / 3 + bw.length / 3 + 1;
+        if (np < 12) continue;
+        const pts = new Float32Array(np * 3);
+        let o = 0;
+        for (let i = bw.length - 3; i >= 0; i -= 3) { pts[o++] = bw[i]; pts[o++] = bw[i + 1]; pts[o++] = bw[i + 2]; }
+        pts[o++] = x; pts[o++] = y; pts[o++] = z;
+        for (let i = 0; i < fw.length; i++) pts[o++] = fw[i];
+        // 小さく閉じた渦（極大点のまわりの輪）は捨てる
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (let i = 0; i < pts.length; i += 3) {
+          x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]);
+          z0 = Math.min(z0, pts[i + 2]); z1 = Math.max(z1, pts[i + 2]);
+        }
+        if (Math.hypot(x1 - x0, y1 - y0, (z1 - z0) * 0.5) < L.minSize) { mark(x, y, z, id, 0); id++; continue; }
+        mark(x, y, z, id, 0);
+        lines.push(pts); verts += np; id++;
+      }
+      // 頂点：位置 xyz + (弧長 s, 全長 L, 密度)。線ごとに区切り（primitive restart）
+      const V6 = new Float32Array(verts * 6), I = new Uint32Array(verts + lines.length);
+      let vi = 0, ii = 0, base = 0;
+      for (const pts of lines) {
+        const np = pts.length / 3;
+        let len = 0;
+        for (let i = 1; i < np; i++) len += Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
+        let s = 0;
+        for (let i = 0; i < np; i++) {
+          if (i) s += Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
+          const x = pts[i * 3], y = pts[i * 3 + 1], z = pts[i * 3 + 2];
+          V6[vi++] = x; V6[vi++] = y; V6[vi++] = z; V6[vi++] = s; V6[vi++] = len; V6[vi++] = Math.min(1.5, sample(x, y, z));
+          I[ii++] = base + i;
+        }
+        I[ii++] = 0xFFFFFFFF; base += np;
+      }
+      postMessage({ lid: L.lid, kind: "lines", verts: V6, idx: I, nLines: lines.length, reps: n * (mirror ? 2 : 1), n, mirror },
+                  [V6.buffer, I.buffer]);
+    }
+
+    // ---- フィラメント方向：接ベクトルにヤコビアンを掛け続けると、最も伸びる（不安定な）方向にそろう ----
+    function makeDirs(q, x, y, w, R, mid, half, C, S, mirror, VB, VW, id) {
+      const D = 48, D2 = D * D, acc = new Float32Array(D * D2 * 4);
+      let vx = 1, vy = 0.3, vw = 0.2;
+      const eps = 1e-7;
+      const adv = () => {
+        step(q, x, y, w); const fx = NX, fy = NY, fw = NW;
+        step(q, x + eps * vx, y + eps * vy, w + eps * vw);
+        let tx = (NX - fx) / eps, ty = (NY - fy) / eps, tw = (NW - fw) / eps;
+        const m = Math.hypot(tx, ty, tw) || 1;
+        vx = tx / m; vy = ty / m; vw = tw / m; x = fx; y = fy; w = fw;
+        return ok(x, y, w);
+      };
+      for (let i = 0; i < 300; i++) if (!adv()) return;
+      const sxy = D / (2 * VB), sw = D / (2 * VW);
+      for (let i = 0; i < 400000; i++) {
+        if (!adv()) break;
+        const X = x / R, Y = y / R, Wn = (w - mid) / half;
+        let dX = vx / R, dY = vy / R, dW = vw / half;
+        const m = Math.hypot(dX, dY, dW) || 1; dX /= m; dY /= m; dW /= m;
+        if (dW < 0) { dX = -dX; dY = -dY; dW = -dW; }          // 向きの符号は「上向き」にそろえる
+        const iz = Math.floor((Wn + VW) * sw);
+        if (iz < 0 || iz >= D) continue;
+        for (let k = 0; k < q.n; k++) for (let mm = 0; mm < (mirror ? 2 : 1); mm++) {
+          const yy = mm ? -Y : Y, dy = mm ? -dY : dY, c = C[k], s = S[k];
+          const px = c * X - s * yy, py = s * X + c * yy;
+          const ix = Math.floor((px + VB) * sxy), iy = Math.floor((py + VB) * sxy);
+          if (ix < 0 || iy < 0 || ix >= D || iy >= D) continue;
+          const j = ((iz * D + iy) * D + ix) * 4;
+          acc[j] += c * dX - s * dy; acc[j + 1] += s * dX + c * dy; acc[j + 2] += dW; acc[j + 3] += 1;
+        }
+      }
+      let mx = 0; for (let j = 3; j < acc.length; j += 4) mx = Math.max(mx, acc[j]);
+      for (let j = 0; j < acc.length; j += 4) {
+        const m = Math.hypot(acc[j], acc[j + 1], acc[j + 2]);
+        const wgt = acc[j + 3] > 0 ? Math.min(1, Math.log1p(acc[j + 3]) / Math.log1p(mx * 0.2 + 1)) * (m / acc[j + 3]) : 0;
+        if (m > 0) { acc[j] /= m; acc[j + 1] /= m; acc[j + 2] /= m; }
+        acc[j + 3] = wgt;                                         // 方向のそろい具合 × 頻度
+      }
+      postMessage({ id, kind: "dirs", D, data: acc }, [acc.buffer]);
+    }
+
+    onmessage = e => {
+      if (e.data.kind === "lines") { if (store) makeLines(e.data); return; }
+      const { q, res, total, id, VB, VW } = e.data;
+      // 過渡を捨てて有界性を確認、半径の最大値を測る
+      let x = 0.01, y = 0.003, w = 0, R = 0;
+      for (let i = 0; i < 20000; i++) {
+        step(q, x, y, w); x = NX; y = NY; w = NW;
+        if (!ok(x, y, w)) { postMessage({ id, fail: true }); return; }
+        if (i > 2000) R = Math.max(R, x * x + y * y);
+      }
+      R = Math.sqrt(R);
+      if (!(R > 1e-6)) { postMessage({ id, fail: true }); return; }
+      // 高さは 1–99 パーセンタイルで [-1, 1] に正規化（点群モードと同じ）
+      const samp = new Float64Array(20000);
+      for (let i = 0; i < samp.length; i++) { step(q, x, y, w); x = NX; y = NY; w = NW; samp[i] = w; }
+      samp.sort();
+      const lo = samp[200], hi = samp[19800], mid = (lo + hi) / 2, half = Math.max((hi - lo) / 2, 1e-6);
+
+      // 対称群の元：n 回回転（ω = 0 なら鏡映 y → -y も）
+      const mirror = Math.abs(q.omega) < 1e-9, reps = q.n * (mirror ? 2 : 1);
+      const C = [], S = [];
+      for (let k = 0; k < q.n; k++) { C.push(Math.cos(2 * Math.PI * k / q.n)); S.push(Math.sin(2 * Math.PI * k / q.n)); }
+      const N = Math.ceil(total / reps);
+      const vol = new Float32Array(res * res * res), r2 = res * res;
+      const sxy = res / (2 * VB), sw = res / (2 * VW);
+      // 8 近傍への三重線形の振り分け（最近傍だと格子の向きの癖が出る）
+      function splat(px, py, fz, iz, wz) {
+        const fx = (px + VB) * sxy - 0.5, fy = (py + VB) * sxy - 0.5;
+        const ix = Math.floor(fx), iy = Math.floor(fy);
+        if (ix < 0 || iy < 0 || ix >= res - 1 || iy >= res - 1) return;
+        const ax = fx - ix, ay = fy - iy, i0 = iz * r2 + iy * res + ix, i1 = i0 + r2;
+        const w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay, bz = 1 - wz;
+        vol[i0] += w00 * bz; vol[i0 + 1] += w10 * bz; vol[i0 + res] += w01 * bz; vol[i0 + res + 1] += w11 * bz;
+        vol[i1] += w00 * wz; vol[i1 + 1] += w10 * wz; vol[i1 + res] += w01 * wz; vol[i1 + res + 1] += w11 * wz;
+      }
+      const chunk = Math.ceil(N / 20);
+      for (let i = 0; i < N; i++) {
+        step(q, x, y, w); x = NX; y = NY; w = NW;
+        if (!ok(x, y, w)) break;
+        const fz = ((w - mid) / half + VW) * sw - 0.5, iz = Math.floor(fz);
+        if (iz < 0 || iz >= res - 1) continue;
+        const wz = fz - iz, X = x / R, Y = y / R;
+        for (let k = 0; k < q.n; k++) {
+          const c = C[k], s = S[k];
+          splat(c * X - s * Y, s * X + c * Y, fz, iz, wz);
+          if (mirror) splat(c * X + s * Y, s * X - c * Y, fz, iz, wz);
+        }
+        if (i % chunk === 0) postMessage({ id, progress: i / N });
+      }
+      // log(1 + count) → ぼかし → 高い分位点で 1 に正規化
+      for (let i = 0; i < vol.length; i++) vol[i] = Math.log1p(vol[i]);
+      const out = blur(vol, res);
+      let mx = 0; for (let i = 0; i < out.length; i++) if (out[i] > mx) mx = out[i];
+      const vals = [], strideS = Math.max(1, Math.floor(out.length / 400000));
+      for (let i = 0; i < out.length; i += strideS) if (out[i] > mx * 0.02) vals.push(out[i]);
+      vals.sort((a, b) => a - b);
+      const p = vals.length ? vals[Math.floor(vals.length * 0.995)] : 1, sc = 1 / (p || 1);
+      for (let i = 0; i < out.length; i++) out[i] *= sc;
+      // 占有ボクセルの密度の分位点（等値面のしきい値を形によらず同じ感覚で選べるように）
+      const quant = [];
+      for (let i = 0; i <= 100; i++) quant.push(vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * i / 100))] * sc : i / 100);
+      // 流線用には、さらに 2 回ぼかした滑らかな場を使う（細かなノイズで線が絡まないように）
+      store = { res, vol: blur(blur(new Float32Array(out), res), res), quant, n: q.n, mirror, VB, VW };
+      postMessage({ id, res, data: out, reps, quant }, [out.buffer]);
+      if (e.data.lines) makeLines(e.data.lines);
+      makeDirs(q, x, y, w, R, mid, half, C, S, mirror, VB, VW, id);
+    };
+  }
+
+  const volume = { tex: null, ready: false, busy: false, id: 0, res: 0, worker: null, ver: 0, url: null };
+  const volOK = (() => {
+    if (!gl || typeof Worker === "undefined") return false;
+    try {
+      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, t);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.R16F, 2, 2, 2, 0, gl.RED, gl.FLOAT, new Float32Array(8));
+      const ok = gl.getError() === gl.NO_ERROR; gl.deleteTexture(t); return ok;
+    } catch { return false; }
+  })();
+
+  function requestVolume() {
+    if (!volOK) return;
+    if (volume.worker && volume.busy) { volume.worker.terminate(); volume.worker = null; }
+    if (!volume.worker) {
+      volume.url ||= URL.createObjectURL(new Blob([`(${volumeWorker.toString()})()`], { type: "text/javascript" }));
+      volume.worker = new Worker(volume.url);
+      volume.worker.onmessage = onVolume;
+    }
+    const res = +$("volRes").value;
+    volume.busy = true; volume.key = volKey();
+    volume.worker.postMessage({ q: { ...q, n: Math.round(q.n) }, res, total: res === 192 ? 30e6 : 12e6, id: ++volume.id, VB, VW,
+                                lines: mode === "flow" ? lineParams() : null });
+    if (mode === "flow") { flow.key = flowKey(); flow.busy = true; }
+    statusEl.textContent = "ボリューム生成中…";
+  }
+
+  function onVolume(e) {
+    const m = e.data;
+    if (m.kind === "lines") { if (m.lid === flow.lid) uploadLines(m); return; }
+    if (m.kind === "dirs") { if (m.id === volume.id) uploadDirs(m); return; }
+    if (m.id !== volume.id) return;
+    if (m.progress !== undefined) { statusEl.textContent = `ボリューム生成中… ${Math.round(m.progress * 100)}%`; return; }
+    volume.busy = false;
+    if (m.fail) { volume.ready = false; statusEl.textContent = "diverged / fixed point"; clearCanvas(); return; }
+    volume.tex ||= gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, volume.tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.R16F, m.res, m.res, m.res, 0, gl.RED, gl.FLOAT, m.data);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                          [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE]])
+      gl.texParameteri(gl.TEXTURE_3D, k, v);
+    volume.res = m.res; volume.quant = m.quant; volume.ready = true;
+    SMK.srcDirty = true; SMK.needReset = true; volume.ver++;
+    volume.label = `n=${Math.round(q.n)}  ${m.res}³ ×${m.reps} sym`;
+    statusEl.textContent = volume.label;
+  }
+
+  function clearCanvas() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.clearColor(...hex2rgb(color.bg).map(v => v / 255), 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  // ==================================================================================
+  // ver.2: レイマーチング（等値面 / インク）
+  // ==================================================================================
+  const VOL_HEAD = `#version 300 es
+    precision highp float; precision highp sampler3D;
+    in vec2 uv; out vec4 o;
+    uniform sampler3D uVol; uniform mat3 uRot; uniform float uCam, uFrame, uRes; uniform vec3 uBox; uniform vec2 uJit;
+    uniform int uSteps;
+    float dens(vec3 p) { return texture(uVol, p / uBox * 0.5 + 0.5).r; }
+    vec2 hitBox(vec3 ro, vec3 rd) {
+      vec3 inv = 1.0 / rd, a = (-uBox - ro) * inv, b = (uBox - ro) * inv, lo = min(a, b), hi = max(a, b);
+      return vec2(max(max(lo.x, lo.y), lo.z), min(min(hi.x, hi.y), hi.z));
+    }
+    bool outside(vec3 p) { return any(greaterThan(abs(p), uBox)); }
+    float hash(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+    // 密度の勾配（物体座標、1 ボクセルの中心差分）
+    vec3 grad(vec3 p) {
+      vec3 e = 2.0 * uBox / uRes;
+      return vec3(dens(p + vec3(e.x, 0, 0)) - dens(p - vec3(e.x, 0, 0)),
+                  dens(p + vec3(0, e.y, 0)) - dens(p - vec3(0, e.y, 0)),
+                  dens(p + vec3(0, 0, e.z)) - dens(p - vec3(0, 0, e.z))) / e;
+    }
+    // 視点：点群モードと同じ透視（カメラ (0,0,uCam)、焦点 2.5）
+    void camRay(out vec3 ro, out vec3 rd, out vec3 dv) {
+      vec2 ndc = uv * 2.0 - 1.0 + uJit;
+      dv = normalize(vec3(ndc / 2.5, -1.0));
+      mat3 iR = transpose(uRot);
+      ro = iR * vec3(0.0, 0.0, uCam); rd = iR * dv + 1e-7;
+    }
+  `;
+
+  const ISO_FS = VOL_HEAD + `
+    uniform float uThr, uIor, uAbsK; uniform vec3 uAbsCol, uMetal, uBgTop, uBgBot, uTint; uniform int uMat;
+    vec3 backdrop(vec3 v) {
+      vec3 c = mix(uBgBot, uBgTop, smoothstep(-0.7, 0.9, v.y));
+      return c * (1.0 - 0.25 * smoothstep(0.2, 0.9, length(v.xy)));
+    }
+    vec3 softbox(vec3 v, vec3 dir, float r, vec3 col) {
+      float c = dot(v, normalize(dir));
+      return col * (smoothstep(cos(r * 1.5), cos(r * 0.7), c) + 0.08 * pow(max(c, 0.0), 4.0));
+    }
+    // スタジオ照明：グラデーション背景 + 柔らかい光源 3 つ（視点座標で固定）
+    vec3 env(vec3 v) {
+      vec3 c = backdrop(v) * 0.7;
+      c += softbox(v, vec3(-0.55, 0.75, 0.45), 0.34, vec3(4.0, 3.8, 3.5) * uTint);   // キー：左上手前
+      c += softbox(v, vec3(0.95, 0.15, 0.25), 0.30, vec3(1.4, 1.8, 2.4) * uTint);    // フィル：右、寒色
+      c += softbox(v, vec3(0.05, 0.35, -1.0), 0.45, vec3(1.6, 1.5, 1.4) * uTint);    // リム：奥
+      c += uBgBot * 2.0 * smoothstep(-0.1, -0.8, v.y);                               // 床の照り返し
+      return c;
+    }
+    // 反射方向に自分自身があるかを粗く調べる（自己遮蔽）
+    float occl(vec3 p, vec3 d) {
+      float s = length(uBox) / 24.0, t = s;
+      for (int i = 0; i < 40; i++) {
+        vec3 q = p + d * t;
+        if (outside(q)) return 1.0;
+        if (dens(q) > uThr) return 0.3;
+        t += s;
+      }
+      return 1.0;
+    }
+    void main() {
+      vec3 ro, rd, dv; camRay(ro, rd, dv);
+      vec2 tb = hitBox(ro, rd);
+      if (tb.x > tb.y || tb.y < 0.0) { o = vec4(backdrop(dv), 1.0); return; }
+      float t0 = max(tb.x, 0.0), t1 = tb.y, dt = 2.0 * length(uBox) / float(uSteps);
+      float t = t0 + dt * hash(vec3(gl_FragCoord.xy, uFrame)), tp = t0;
+      bool hit = false;
+      for (int i = 0; i < 1024; i++) {
+        if (i >= uSteps || t > t1) break;
+        if (dens(ro + rd * t) > uThr) { hit = true; break; }
+        tp = t; t += dt;
+      }
+      if (!hit) { o = vec4(backdrop(dv), 1.0); return; }
+      // 二分探索で境界を精密化
+      float a = tp, b = t;
+      for (int k = 0; k < 6; k++) { float m = 0.5 * (a + b); if (dens(ro + rd * m) > uThr) b = m; else a = m; }
+      vec3 p = ro + rd * b, g = grad(p);
+      vec3 n = length(g) > 1e-6 ? -normalize(g) : -rd;
+      if (dot(n, rd) > 0.0) n = -n;
+      float c = clamp(dot(n, -rd), 0.0, 1.0), fr = pow(1.0 - c, 5.0);
+      vec3 r = reflect(rd, n), eps = n * 2.0 * length(uBox) / uRes;
+      vec3 refl = env(uRot * r) * occl(p + eps, r);
+      vec3 col;
+      if (uMat == 1) {
+        // 金属：反射のみ（F0 が金属の色）
+        vec3 F0 = uMetal;
+        col = refl * (F0 + (1.0 - F0) * fr);
+      } else {
+        // ガラス：Schlick フレネル + 屈折 + 厚みに応じた Beer–Lambert 吸収
+        float F0 = pow((uIor - 1.0) / (uIor + 1.0), 2.0), F = F0 + (1.0 - F0) * fr;
+        vec3 ri = refract(rd, n, 1.0 / uIor);
+        float s = dt * 0.5, tt = s, thick = 0.0;
+        vec3 pe = p - eps; bool exited = false;
+        for (int i = 0; i < 256; i++) {
+          vec3 q = p - eps + ri * tt;
+          if (outside(q)) { pe = q; thick = tt; exited = true; break; }
+          if (dens(q) < uThr) {
+            float a2 = tt - s, b2 = tt;
+            for (int k = 0; k < 5; k++) { float m = 0.5 * (a2 + b2); if (dens(p - eps + ri * m) < uThr) b2 = m; else a2 = m; }
+            thick = b2; pe = p - eps + ri * b2; exited = true; break;
+          }
+          tt += s;
+        }
+        if (!exited) { thick = tt; pe = p + ri * tt; }
+        vec3 ge = grad(pe), ro2 = ri;
+        if (length(ge) > 1e-6) {
+          vec3 ng = normalize(ge);                 // 出口では内向き＝光線と逆向きの法線
+          ro2 = refract(ri, ng, uIor);
+          if (dot(ro2, ro2) < 1e-6) ro2 = reflect(ri, ng);   // 全反射
+        }
+        vec3 sigma = -log(max(uAbsCol, vec3(0.02))) * uAbsK;
+        vec3 trans = env(uRot * ro2) * exp(-sigma * thick);
+        col = refl * F + trans * (1.0 - F);
+      }
+      o = vec4(col, 1.0);
+    }
+  `;
+
+  const QUAD_VS = `#version 300 es
+    const vec2 v[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    out vec2 uv;
+    void main() { gl_Position = vec4(v[gl_VertexID], 0.0, 1.0); uv = v[gl_VertexID] * 0.5 + 0.5; }`;
+  const PRESENT_FS = `#version 300 es
+    precision highp float;
+    in vec2 uv; out vec4 o; uniform sampler2D uTex; uniform int uTone; uniform float uExp;
+    void main() {
+      vec3 c = texture(uTex, uv).rgb * uExp;
+      c = uTone == 1 ? 1.0 - exp(-c * 1.15) : clamp(c, 0.0, 1.0);
+      o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+    }`;
+
+  const vr = { iso: null, ink: null, present: null, fbo: null, tex: null, size: 0, kMax: 24, fmt: null,
+               frame: 0, sig: "", lastMove: 0, spinScale: 0.75, parVer: 0, lastRendered: false };
+  let volRenderOK = volOK;
+  if (volOK) {
+    try {
+      vr.iso = compile(QUAD_VS, ISO_FS); vr.present = compile(QUAD_VS, PRESENT_FS);
+      const half = gl.getExtension("EXT_color_buffer_half_float") || floatOK;
+      vr.fmt = half ? [gl.RGBA16F, gl.HALF_FLOAT] : [gl.RGBA8, gl.UNSIGNED_BYTE];
+      if (!half) vr.kMax = 8;
+      vr.fbo = gl.createFramebuffer(); vr.tex = gl.createTexture();
+    } catch (err) { console.warn(err); volRenderOK = false; }
+  }
+  const uloc = (pr, n) => gl.getUniformLocation(pr, n);
+
+  function ensureTarget(S) {
+    if (S === vr.size) return;
+    vr.size = S;
+    gl.bindTexture(gl.TEXTURE_2D, vr.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, vr.fmt[0], S, S, 0, gl.RGBA, vr.fmt[1], null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, vr.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, vr.tex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE && vr.fmt[0] !== gl.RGBA8) {
+      vr.fmt = [gl.RGBA8, gl.UNSIGNED_BYTE]; vr.kMax = 8; vr.size = 0; ensureTarget(S);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  const srgb2lin = h => hex2rgb(h).map(v => Math.pow(v / 255, 2.2));
+
+  // 1 フレーム分をボリュームから描いて累積バッファへ（k 枚目は 1/(k+1) の重みで平均）
+  function traceFrame(S, steps, k) {
+    ensureTarget(S);
+    const iso = true, pr = vr.iso;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, vr.fbo);
+    gl.viewport(0, 0, S, S);
+    gl.useProgram(pr);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_3D, volume.tex); gl.uniform1i(uloc(pr, "uVol"), 2);
+    const R = rotMat();
+    gl.uniformMatrix3fv(uloc(pr, "uRot"), false, R);
+    gl.uniform1f(uloc(pr, "uCam"), 3.2 / view.zoom);
+    gl.uniform1f(uloc(pr, "uFrame"), k + (vr.sig.length % 7) * 0.37 + performance.now() % 97);
+    gl.uniform1f(uloc(pr, "uRes"), volume.res);
+    gl.uniform3f(uloc(pr, "uBox"), VB, VB, VW * Math.max(view.height, 0.05));
+    gl.uniform2f(uloc(pr, "uJit"), k ? (Math.random() - 0.5) * 2 / S : 0, k ? (Math.random() - 0.5) * 2 / S : 0);
+    gl.uniform1i(uloc(pr, "uSteps"), steps);
+    if (iso) {
+      const qi = Math.min(99.999, vs.thr * 100), q0 = Math.floor(qi), Q = volume.quant;
+      gl.uniform1f(uloc(pr, "uThr"), Q[q0] + (Q[q0 + 1] - Q[q0]) * (qi - q0));
+      gl.uniform1f(uloc(pr, "uIor"), vs.ior);
+      gl.uniform1f(uloc(pr, "uAbsK"), vs.absK);
+      gl.uniform3fv(uloc(pr, "uAbsCol"), srgb2lin($("absorb").value));
+      gl.uniform1i(uloc(pr, "uMat"), $("material").value === "mercury" ? 1 : 0);
+      gl.uniform3fv(uloc(pr, "uMetal"), srgb2lin($("metal").value));
+      gl.uniform3fv(uloc(pr, "uBgTop"), srgb2lin($("envTop").value));
+      gl.uniform3fv(uloc(pr, "uBgBot"), srgb2lin($("envBot").value));
+      gl.uniform3fv(uloc(pr, "uTint"), srgb2lin($("envLight").value));
+    }
+    gl.enable(gl.BLEND);
+    gl.blendColor(0, 0, 0, 1 / (k + 1));
+    gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+  }
+
+  function present(tone = 1, exp = vs.exposure) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, fbW, fbW);
+    gl.useProgram(vr.present);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, vr.tex);
+    gl.uniform1i(uloc(vr.present, "uTex"), 0);
+    gl.uniform1i(uloc(vr.present, "uTone"), tone);
+    gl.uniform1f(uloc(vr.present, "uExp"), exp);
+    gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+  }
+
+  // ==================================================================================
+  // ver.2: 流線（形の表面を流れる細い線。対称像はインスタンス描画で複製）
+  // ==================================================================================
+  const FLOW_VS = `#version 300 es
+    in vec3 aPos; in vec3 aAttr;
+    uniform mat3 uRot; uniform float uH, uCam; uniform int uN;
+    out vec3 vA; out float vNear;
+    void main() {
+      int k = gl_InstanceID % uN;
+      vec2 p = aPos.xy;
+      if (gl_InstanceID >= uN) p.y = -p.y;                       // 鏡映
+      float a = 6.28318530718 * float(k) / float(uN), c = cos(a), s = sin(a);
+      p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);            // n 回回転
+      vec3 q = uRot * vec3(p, aPos.z * uH);
+      float z = uCam - q.z;
+      gl_Position = vec4(q.xy * 2.5 / z, 0.0, 1.0);
+      vA = aAttr; vNear = clamp(1.6 - z / uCam, 0.0, 1.0);
+    }`;
+  const FLOW_FS = `#version 300 es
+    precision highp float;
+    in vec3 vA; in float vNear; out vec4 o;
+    uniform vec3 uC1, uC2; uniform float uAlpha, uTime, uFlow, uGlow;
+    void main() {
+      float s = vA.x, L = max(vA.y, 1e-4), u = s / L;
+      float taper = smoothstep(0.0, 0.15, u) * smoothstep(1.0, 0.85, u);   // 筆の入りと抜き
+      vec3 col = mix(uC1, uC2, smoothstep(0.15, 1.1, vA.z));
+      float pulse = 1.0;
+      if (uFlow > 0.5) {
+        float ph = fract(s * 1.6 - uTime);                                  // 線に沿って進む光の粒
+        pulse = 0.45 + 1.6 * exp(-ph * 9.0) * uGlow;
+      }
+      float a = uAlpha * taper * mix(0.3, 1.0, vNear) * pulse;
+      o = vec4(col * a, a);
+    }`;
+  const flow = { prog: null, vao: null, vbo: null, ibo: null, count: 0, reps: 1, n: 1, lid: 0, ready: false, label: "", busy: false };
+  if (volRenderOK) {
+    try {
+      flow.prog = compile(FLOW_VS, FLOW_FS);
+      flow.vao = gl.createVertexArray(); flow.vbo = gl.createBuffer(); flow.ibo = gl.createBuffer();
+      gl.bindVertexArray(flow.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, flow.vbo);
+      const lp = gl.getAttribLocation(flow.prog, "aPos"), la = gl.getAttribLocation(flow.prog, "aAttr");
+      gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, 24, 0);
+      gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la, 3, gl.FLOAT, false, 24, 12);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, flow.ibo);
+      gl.bindVertexArray(null);
+    } catch (err) { console.warn(err); flow.prog = null; }
+  }
+
+  function uploadLines(m) {
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, flow.vbo); gl.bufferData(gl.ARRAY_BUFFER, m.verts, gl.STATIC_DRAW);
+    gl.bindVertexArray(flow.vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, flow.ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    flow.count = m.idx.length; flow.reps = m.reps; flow.n = m.n; flow.ready = true; flow.busy = false;
+    flow.label = `n=${m.n}  流線 ${m.nLines}×${m.reps}`;
+    if (mode === "flow") statusEl.textContent = flow.label;
+  }
+
+  function requestLines() {
+    if (!volRenderOK || !flow.prog) return;
+    if (volume.key !== volKey() || !volume.worker) { requestVolume(); return; }
+    flow.busy = true; flow.key = flowKey();
+    volume.worker.postMessage({ kind: "lines", ...lineParams() });
+    statusEl.textContent = "流線を計算中…";
+  }
+
+  function drawFlow() {
+    resize();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, fbW, fbW);
+    const bg = hex2rgb($("flowBg").value).map(v => v / 255);
+    gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    if (!flow.ready) return;
+    const dark = 0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2] < 0.45;
+    const pr = flow.prog;
+    gl.useProgram(pr);
+    gl.uniformMatrix3fv(uloc(pr, "uRot"), false, rotMat());
+    gl.uniform1f(uloc(pr, "uH"), view.height);
+    gl.uniform1f(uloc(pr, "uCam"), 3.2 / view.zoom);
+    gl.uniform1i(uloc(pr, "uN"), flow.n);
+    gl.uniform3fv(uloc(pr, "uC1"), hex2rgb($("ink1").value).map(v => v / 255));
+    gl.uniform3fv(uloc(pr, "uC2"), hex2rgb($("ink2").value).map(v => v / 255));
+    gl.uniform1f(uloc(pr, "uAlpha"), fs.alpha * (dark ? 0.8 : 1));
+    gl.uniform1f(uloc(pr, "uTime"), motion.beats * 0.5);
+    gl.uniform1f(uloc(pr, "uFlow"), $("flowAnim").checked ? 1 : 0);
+    gl.uniform1f(uloc(pr, "uGlow"), fs.glow);
+    gl.enable(gl.BLEND);
+    if (dark) gl.blendFunc(gl.ONE, gl.ONE);                 // 暗い背景：光の線を加算
+    else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);      // 明るい背景：墨を重ねる
+    gl.bindVertexArray(flow.vao);
+    gl.drawElementsInstanced(gl.LINE_STRIP, flow.count, gl.UNSIGNED_INT, 0, flow.reps);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+  }
+
+  // 動いている間は半分の解像度・少ないステップ、止まったら全解像度でジッターを累積
+  function renderVolume(now) {
+    if (!volume.ready) return;
+    resize();
+    const sig = [view.yaw, view.pitch, view.zoom, view.height, vr.parVer, volume.ver, fbW, mode].join();
+    if (sig !== vr.sig) { vr.sig = sig; vr.lastMove = now; vr.frame = 0; }
+    const spinning = $("spin").checked && !dragging;
+    const moving = dragging || (!spinning && now - vr.lastMove < 160);
+    if (moving) {
+      traceFrame(Math.max(64, Math.round(fbW * 0.5)), Math.max(24, Math.round(vs.steps * 0.45)), 0);
+      vr.frame = 0;
+    } else if (spinning) {
+      // 回転中はフレーム時間を見て解像度を自動調整（重ければ下げ、余裕があれば上げる）
+      if (motion.dt > 0.04) vr.spinScale = Math.max(0.4, vr.spinScale * 0.92);
+      else if (motion.dt < 0.022) vr.spinScale = Math.min(1, vr.spinScale * 1.03);
+      traceFrame(Math.max(64, Math.round(fbW * vr.spinScale)), Math.max(32, Math.round(vs.steps * 0.6)), 0);
+      vr.frame = 0;
+    } else if (vr.frame < vr.kMax) {
+      traceFrame(fbW, vs.steps, vr.frame);
+      vr.frame++;
+    } else return;
+    present();
+    statusEl.textContent = `${volume.label}  ${moving ? "preview" : spinning ? `♩=${motion.bpm}` : `${vr.frame}/${vr.kMax}`}`;
+  }
+
+  // ==================================================================================
+  // ver.3: 煙（GPU 上の Stable Fluids。3D 格子は 2D タイルアトラスに並べて持つ）
+  // ==================================================================================
+  // 計算領域（表示座標）：x, y ∈ [-SMK_HALF, SMK_HALF]、z ∈ [SMK_Z0, SMK_Z0 + 2·SMK_HALF]。上に煙が昇る余白をとる
+  const SMK_HALF = 1.15, SMK_Z0 = -0.55;
+  const SIM_HEAD = `#version 300 es
+    precision highp float; precision highp int; precision highp sampler2D;
+    uniform float uN; uniform int uNi, uTx; uniform vec2 uAtlas;
+    out vec4 o;
+    ivec3 cellOf() {
+      ivec2 f = ivec2(gl_FragCoord.xy), t = f / uNi;
+      return ivec3(f.x - t.x * uNi, f.y - t.y * uNi, t.y * uTx + t.x);
+    }
+    vec4 F(sampler2D t, ivec3 c) {
+      c = clamp(c, ivec3(0), ivec3(uNi - 1));
+      return texelFetch(t, ivec2((c.z % uTx) * uNi + c.x, (c.z / uTx) * uNi + c.y), 0);
+    }
+    // 三重線形：スライス内はハードウェアの双線形（タイルの外にはみ出さないよう座標を制限）、スライス間は手で補間
+    vec4 S(sampler2D t, vec3 p) {
+      p = clamp(p, vec3(0.5), vec3(uN - 0.5));
+      float zf = p.z - 0.5, z0 = floor(zf), f = zf - z0;
+      int i0 = int(z0), i1 = min(i0 + 1, uNi - 1);
+      vec2 o0 = vec2(float(i0 % uTx), float(i0 / uTx)) * uN, o1 = vec2(float(i1 % uTx), float(i1 / uTx)) * uN;
+      return mix(texture(t, (o0 + p.xy) / uAtlas), texture(t, (o1 + p.xy) / uAtlas), f);
+    }
+    bool outCell(ivec3 c) { return any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, ivec3(uNi))); }
+    const ivec3 EX = ivec3(1, 0, 0), EY = ivec3(0, 1, 0), EZ = ivec3(0, 0, 1);
+  `;
+  const SIM_FS = {
+    clear: `void main() { o = vec4(0.0); }`,
+    // 発生源：アトラクタの密度（強さ）と、フィラメント方向（初速の向き）
+    src: `uniform highp sampler3D uVol, uDir; uniform float uH, uVB, uVW, uCell; uniform vec3 uMin;
+      void main() {
+        ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec3 wp = uMin + (vec3(c) + 0.5) * uCell;
+        vec3 tc = vec3(wp.xy / uVB, wp.z / max(uH, 0.05) / uVW) * 0.5 + 0.5;
+        if (any(lessThan(tc, vec3(0.0))) || any(greaterThan(tc, vec3(1.0)))) { o = vec4(0.0); return; }
+        float s = smoothstep(0.3, 1.0, texture(uVol, tc).r);
+        vec4 dr = texture(uDir, tc);
+        vec3 d = vec3(dr.xy, dr.z * uH); float l = length(d);
+        o = vec4(s, l > 1e-5 ? d / l * dr.w : vec3(0.0));
+      }`,
+    init: `uniform sampler2D uSrc; uniform float uA, uAT;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        float s = F(uSrc, c).x; o = vec4(s * uA, s * uAT, 0.0, 0.0); }`,
+    // 1. 注入：ρ, T（とかき混ぜ）
+    injS: `uniform sampler2D uSc, uSrc; uniform float uRate, uRateT, uDt; uniform vec4 uSplat; uniform float uSplatR;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec4 s = F(uSc, c); float src = F(uSrc, c).x;
+        s.xy += vec2(uRate, uRateT) * src * uDt;
+        if (uSplat.w > 0.0) { vec3 d = vec3(c) + 0.5 - uSplat.xyz; s.x += 0.15 * uSplat.w * exp(-dot(d, d) / (uSplatR * uSplatR)); }
+        o = s; }`,
+    injV: `uniform sampler2D uVel, uSrc, uSc; uniform float uSpeed, uDt, uSplatR, uTurb, uTime; uniform vec4 uSplat; uniform vec3 uSplatF;
+      // 乱れ：空間的になめらかな値ノイズ（4 セル周期、時間とともに変化）。対称性を壊す種になる
+      vec3 h3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx) - 0.5; }
+      vec3 vnoise(vec3 p) {
+        vec3 i = floor(p), f = p - i; f = f * f * (3.0 - 2.0 * f);
+        const vec3 X = vec3(1, 0, 0), Y = vec3(0, 1, 0), Z = vec3(0, 0, 1);
+        vec3 a = mix(mix(h3(i), h3(i + X), f.x), mix(h3(i + Y), h3(i + X + Y), f.x), f.y);
+        vec3 b = mix(mix(h3(i + Z), h3(i + X + Z), f.x), mix(h3(i + Y + Z), h3(i + vec3(1.0)), f.x), f.y);
+        return mix(a, b, f.z);
+      }
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec4 sr = F(uSrc, c); vec3 u = F(uVel, c).xyz + sr.yzw * sr.x * uSpeed * uDt;
+        u += uTurb * uDt * min(F(uSc, c).x, 1.0) * vnoise(vec3(c) / 4.0 + vec3(0.0, 0.0, uTime * 0.7));
+        if (uSplat.w > 0.0) { vec3 d = vec3(c) + 0.5 - uSplat.xyz; u += uSplatF * exp(-dot(d, d) / (uSplatR * uSplatR)); }
+        o = vec4(u, 0.0); }`,
+    // 2, 6. 移流（MacCormack）：前進セミラグランジュ → 逆向きで誤差を見積もって補正し、近傍の範囲に制限
+    adv1: `uniform sampler2D uVel, uQ; uniform float uDt;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        o = S(uQ, vec3(c) + 0.5 - uDt * F(uVel, c).xyz); }`,
+    adv2: `uniform sampler2D uVel, uQ, uFwd; uniform float uDt; uniform vec4 uDecay;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec3 p = vec3(c) + 0.5, u = F(uVel, c).xyz;
+        vec4 r = F(uFwd, c) + 0.5 * (F(uQ, c) - S(uFwd, p + uDt * u));
+        ivec3 b = ivec3(floor(p - uDt * u - 0.5));
+        vec4 mn = vec4(1e9), mx = vec4(-1e9);
+        for (int k = 0; k < 8; k++) { vec4 v = F(uQ, b + ivec3(k & 1, (k >> 1) & 1, k >> 2)); mn = min(mn, v); mx = max(mx, v); }
+        r = clamp(r, mn, mx) * uDecay;
+        o = any(notEqual(r, r)) ? vec4(0.0) : clamp(r, vec4(-1e4), vec4(1e4)); }`,
+    // 3, 4. 渦度 → 浮力（上＝w 軸）と渦度閉じ込め
+    vort: `uniform sampler2D uVel;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec3 L = F(uVel, c - EX).xyz, R = F(uVel, c + EX).xyz, D = F(uVel, c - EY).xyz, U = F(uVel, c + EY).xyz,
+             B = F(uVel, c - EZ).xyz, T = F(uVel, c + EZ).xyz;
+        vec3 w = 0.5 * vec3((U.z - D.z) - (T.y - B.y), (T.x - B.x) - (R.z - L.z), (R.y - L.y) - (U.x - D.x));
+        o = vec4(w, length(w)); }`,
+    force: `uniform sampler2D uVel, uSc, uVort; uniform float uDt, uAlpha, uBeta, uEps;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec4 s = F(uSc, c);
+        vec3 f = vec3(0.0, 0.0, -uAlpha * s.x + uBeta * s.y);
+        vec3 eta = 0.5 * vec3(F(uVort, c + EX).w - F(uVort, c - EX).w, F(uVort, c + EY).w - F(uVort, c - EY).w,
+                              F(uVort, c + EZ).w - F(uVort, c - EZ).w);
+        float l = length(eta);
+        if (l > 1e-5) f += uEps * cross(eta / l, F(uVort, c).xyz);
+        vec3 u = F(uVel, c).xyz + uDt * f;
+        // 発散の防止：NaN を消し、速さを 1 ステップ 6 セルまでに制限
+        if (any(notEqual(u, u))) u = vec3(0.0);
+        float sp = length(u) * uDt; if (sp > 6.0) u *= 6.0 / sp;
+        o = vec4(u, 0.0); }`,
+    // 5. 発散 → 圧力（Jacobi）→ 勾配を引く。壁は速度 0・圧力はノイマン、開放した上面は圧力 0
+    div: `uniform sampler2D uVel; uniform int uOpen;
+      vec3 Vb(ivec3 q, vec3 uc) { if (outCell(q)) return (uOpen == 1 && q.z >= uNi) ? uc : vec3(0.0); return F(uVel, q).xyz; }
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec3 uc = F(uVel, c).xyz;
+        o = vec4(0.5 * (Vb(c + EX, uc).x - Vb(c - EX, uc).x + Vb(c + EY, uc).y - Vb(c - EY, uc).y + Vb(c + EZ, uc).z - Vb(c - EZ, uc).z), 0.0, 0.0, 0.0); }`,
+    jacobi: `uniform sampler2D uP, uDiv; uniform int uOpen;
+      float Pb(ivec3 q, float pc) { if (outCell(q)) return (uOpen == 1 && q.z >= uNi) ? 0.0 : pc; return F(uP, q).x; }
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        float pc = F(uP, c).x;
+        o = vec4((Pb(c + EX, pc) + Pb(c - EX, pc) + Pb(c + EY, pc) + Pb(c - EY, pc) + Pb(c + EZ, pc) + Pb(c - EZ, pc) - F(uDiv, c).x) / 6.0, 0.0, 0.0, 0.0); }`,
+    grad: `uniform sampler2D uVel, uP; uniform int uOpen;
+      float Pb(ivec3 q, float pc) { if (outCell(q)) return (uOpen == 1 && q.z >= uNi) ? 0.0 : pc; return F(uP, q).x; }
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        float pc = F(uP, c).x;
+        vec3 u = F(uVel, c).xyz - 0.5 * vec3(Pb(c + EX, pc) - Pb(c - EX, pc), Pb(c + EY, pc) - Pb(c - EY, pc), Pb(c + EZ, pc) - Pb(c - EZ, pc));
+        int M = uNi - 1;
+        if (c.x == 0) u.x = max(u.x, 0.0); if (c.x == M) u.x = min(u.x, 0.0);
+        if (c.y == 0) u.y = max(u.y, 0.0); if (c.y == M) u.y = min(u.y, 0.0);
+        if (c.z == 0) u.z = max(u.z, 0.0); if (c.z == M && uOpen == 0) u.z = min(u.z, 0.0);
+        o = vec4(u, 0.0); }`,
+    // 6. 陰的拡散 (I − κΔt∇²)x = b を Jacobi で
+    diff: `uniform sampler2D uX, uB; uniform float uA;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec4 n = F(uX, c + EX) + F(uX, c - EX) + F(uX, c + EY) + F(uX, c - EY) + F(uX, c + EZ) + F(uX, c - EZ);
+        o = (F(uB, c) + uA * n) / (1.0 + 6.0 * uA); }`,
+    // 対称化：f_sym(x) = (1/|G|) Σ g⁻¹ f(g x)。速度はベクトルとして戻す。元の場と uStr で補間
+    sym: `uniform sampler2D uQ; uniform int uVec, uNs, uMir; uniform float uStr;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        vec3 p = vec3(c) + 0.5; vec2 q = p.xy - 0.5 * uN;
+        vec4 acc = vec4(0.0); float cnt = 0.0;
+        for (int k = 0; k < 16; k++) {
+          if (k >= uNs) break;
+          float a = 6.28318530718 * float(k) / float(uNs), cs = cos(a), sn = sin(a);
+          for (int m = 0; m < 2; m++) {
+            if (m == 1 && uMir == 0) break;
+            vec2 qq = m == 1 ? vec2(q.x, -q.y) : q;
+            vec4 v = S(uQ, vec3(cs * qq.x - sn * qq.y + 0.5 * uN, sn * qq.x + cs * qq.y + 0.5 * uN, p.z));
+            if (uVec == 1) { vec2 r = vec2(cs * v.x + sn * v.y, -sn * v.x + cs * v.y); if (m == 1) r.y = -r.y; v.xy = r; }
+            acc += v; cnt += 1.0;
+          }
+        }
+        o = mix(F(uQ, c), acc / cnt, uStr); }`,
+  };
+
+  // 描画：モード B（前から後ろへの合成・シャドウレイの単一散乱・Henyey–Greenstein・ジッター）を煙の密度に
+  const SMOKE_FS = `#version 300 es
+    precision highp float; precision highp int; precision highp sampler2D;
+    in vec2 uv; out vec4 o;
+    uniform sampler2D uSc; uniform float uN; uniform int uNi, uTx; uniform vec2 uAtlas;
+    uniform mat3 uRot; uniform float uCam, uFrame, uSize; uniform vec3 uMin;
+    uniform int uSteps, uShSteps;
+    uniform vec3 uLight, uLightV, uCol, uBg1, uBg2;
+    uniform float uConc, uAlb, uG, uTemp, uInk;
+    vec4 S(sampler2D t, vec3 p) {
+      p = clamp(p, vec3(0.5), vec3(uN - 0.5));
+      float zf = p.z - 0.5, z0 = floor(zf), f = zf - z0;
+      int i0 = int(z0), i1 = min(i0 + 1, uNi - 1);
+      vec2 o0 = vec2(float(i0 % uTx), float(i0 / uTx)) * uN, o1 = vec2(float(i1 % uTx), float(i1 / uTx)) * uN;
+      return mix(texture(t, (o0 + p.xy) / uAtlas), texture(t, (o1 + p.xy) / uAtlas), f);
+    }
+    vec4 smp(vec3 wp) { return S(uSc, (wp - uMin) / uSize * uN); }
+    bool outside(vec3 p) { return any(lessThan(p, uMin)) || any(greaterThan(p, uMin + uSize)); }
+    float hash(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+    float hg(float c, float g) { float d = 1.0 + g * g - 2.0 * g * c; return (1.0 - g * g) / (4.0 * 3.14159265 * d * sqrt(d)); }
+    vec3 bg(vec3 v) {
+      return mix(uBg2, uBg1, smoothstep(-0.8, 0.9, v.y)) + (uBg1 + 0.1) * 0.12 * pow(max(dot(v, uLightV), 0.0), 8.0);
+    }
+    void main() {
+      vec3 dv = normalize(vec3((uv * 2.0 - 1.0) / 2.5, -1.0));
+      mat3 iR = transpose(uRot);
+      vec3 ro = iR * vec3(0.0, 0.0, uCam), rd = iR * dv + 1e-7;
+      vec3 inv = 1.0 / rd, a = (uMin - ro) * inv, b = (uMin + uSize - ro) * inv, lo = min(a, b), hi = max(a, b);
+      float t0 = max(max(max(lo.x, lo.y), lo.z), 0.0), t1 = min(min(hi.x, hi.y), hi.z);
+      if (t0 > t1) { o = vec4(bg(dv), 1.0); return; }
+      float dt = 1.7320508 * uSize / float(uSteps), jit = hash(vec3(gl_FragCoord.xy, uFrame));
+      float t = t0 + dt * jit;
+      float ph = hg(dot(uLight, rd), uG) * 4.0 * 3.14159265;
+      vec3 lightC = vec3(1.0, 0.95, 0.88) * 2.6, amb = mix(uBg2, uBg1, 0.7) * 0.6 + 0.04;
+      float sdt = 0.55 * uSize / float(uShSteps);
+      vec3 T = vec3(1.0), L = vec3(0.0);
+      for (int i = 0; i < 512; i++) {
+        if (i >= uSteps || t > t1) break;
+        vec3 p = ro + rd * t;
+        vec4 s = smp(p);
+        float d = s.x;
+        if (d > 0.003) {
+          vec3 col = uCol;
+          if (uTemp > 0.0) col = mix(col, vec3(1.0, 0.42, 0.12), clamp(s.y * uTemp, 0.0, 0.75));   // 温度でわずかに色づく
+          vec3 ext = uConc * (uInk > 0.5 ? (1.05 - col) : vec3(1.0));
+          float tau = 0.0;
+          for (int j = 0; j < 24; j++) {
+            if (j >= uShSteps) break;
+            vec3 lp = p + uLight * sdt * (float(j) + jit);
+            if (outside(lp)) break;
+            tau += smp(lp).x;
+          }
+          vec3 Tl = exp(-tau * sdt * ext);
+          vec3 Sc = col * (lightC * Tl * ph + amb);
+          vec3 Ts = exp(-d * ext * dt);
+          L += T * Sc * uAlb * (1.0 - Ts);
+          T *= Ts;
+          if (max(T.r, max(T.g, T.b)) < 0.01) break;
+        }
+        t += dt;
+      }
+      o = vec4(L + T * bg(dv), 1.0);
+    }`;
+
+  const SMK = { ok: false, fmt: null, N: 0, tx: 0, W: 0, t: {}, fb: {}, P: {}, U: new Map(), dirTex: null,
+                playing: true, needReset: true, srcDirty: true, lvl: 0, accDt: 0, accN: 0, splat: null, steps: 0, fps: 0 };
+  (function smokeInit() {
+    if (!volRenderOK) return;
+    try {
+      const f32 = gl.getExtension("EXT_color_buffer_float"), lin = gl.getExtension("OES_texture_float_linear");
+      const h16 = f32 || gl.getExtension("EXT_color_buffer_half_float");
+      SMK.fmt32 = f32 && lin ? [gl.RGBA32F, gl.FLOAT] : null;
+      SMK.fmt16 = h16 ? [gl.RGBA16F, gl.HALF_FLOAT] : null;
+      if (!SMK.fmt32 && !SMK.fmt16) return;
+      for (const [k, src] of Object.entries(SIM_FS)) SMK.P[k] = compile(QUAD_VS, SIM_HEAD + src);
+      SMK.P.render = compile(QUAD_VS, SMOKE_FS);
+      SMK.dirTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_3D, SMK.dirTex);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, 1, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],
+                            [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_3D, k, v);
+      SMK.ok = true;
+    } catch (err) { console.warn("smoke disabled:", err); SMK.ok = false; }
+  })();
+
+  function uploadDirs(m) {
+    if (!SMK.ok) return;
+    gl.bindTexture(gl.TEXTURE_3D, SMK.dirTex);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, m.D, m.D, m.D, 0, gl.RGBA, gl.FLOAT, m.data);
+    SMK.srcDirty = true;
+  }
+
+  // 格子の確保。失敗したら half float に切り替える
+  function smkAlloc(N) {
+    for (const t of Object.values(SMK.t)) gl.deleteTexture(t);
+    for (const f of Object.values(SMK.fb)) gl.deleteFramebuffer(f);
+    SMK.t = {}; SMK.fb = {};
+    const tx = Math.ceil(Math.sqrt(N)), W = tx * N;
+    let fmt = N <= 64 && SMK.fmt32 ? SMK.fmt32 : (SMK.fmt16 || SMK.fmt32);
+    const names = ["vel0", "vel1", "velT", "sc0", "sc1", "scT", "p0", "p1", "div", "vort", "src"];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let okAll = true;
+      for (const n of names) {
+        const t = SMK.t[n] || gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, fmt[0], W, W, 0, gl.RGBA, fmt[1], null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fb = SMK.fb[n] || gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) okAll = false;
+        SMK.t[n] = t; SMK.fb[n] = fb;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (okAll) break;
+      if (fmt === SMK.fmt16 || !SMK.fmt16) { SMK.ok = false; return false; }
+      fmt = SMK.fmt16;
+    }
+    Object.assign(SMK, { N, tx, W, fmtName: fmt[0] === gl.RGBA32F ? "32F" : "16F", needReset: true, srcDirty: true });
+    return true;
+  }
+
+  function smkU(pr, name) {
+    let m = SMK.U.get(pr); if (!m) SMK.U.set(pr, m = new Map());
+    if (!m.has(name)) m.set(name, gl.getUniformLocation(pr, name));
+    return m.get(name);
+  }
+  // 1 パス：texs のテクスチャを読み、target に全格子を書く
+  function smkPass(name, target, texs, set) {
+    const pr = SMK.P[name];
+    gl.useProgram(pr);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, SMK.fb[target]);
+    gl.viewport(0, 0, SMK.W, SMK.W);
+    gl.uniform1f(smkU(pr, "uN"), SMK.N); gl.uniform1i(smkU(pr, "uNi"), SMK.N); gl.uniform1i(smkU(pr, "uTx"), SMK.tx);
+    gl.uniform2f(smkU(pr, "uAtlas"), SMK.W, SMK.W);
+    let unit = 0;
+    for (const [u, t] of Object.entries(texs || {})) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      if (u === "uVol" || u === "uDir") gl.bindTexture(gl.TEXTURE_3D, t); else gl.bindTexture(gl.TEXTURE_2D, SMK.t[t]);
+      gl.uniform1i(smkU(pr, u), unit++);
+    }
+    if (set) set(n => smkU(pr, n));
+    gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+  }
+  const swap = (a, b) => { const t = SMK.t[a]; SMK.t[a] = SMK.t[b]; SMK.t[b] = t; const f = SMK.fb[a]; SMK.fb[a] = SMK.fb[b]; SMK.fb[b] = f; };
+
+  function smkSource() {
+    const cell = 2 * SMK_HALF / SMK.N;
+    smkPass("src", "src", { uVol: volume.tex, uDir: SMK.dirTex }, U => {
+      gl.uniform1f(U("uH"), Math.max(view.height, 0.05)); gl.uniform1f(U("uVB"), VB); gl.uniform1f(U("uVW"), VW);
+      gl.uniform1f(U("uCell"), cell); gl.uniform3f(U("uMin"), -SMK_HALF, -SMK_HALF, SMK_Z0);
+    });
+    SMK.srcDirty = false; SMK.srcH = view.height;
+  }
+
+  function smkReset() {
+    for (const n of ["vel0", "vel1", "velT", "p0", "p1", "sc1", "scT"]) smkPass("clear", n);
+    // 解放モードはアトラクタそのものを初期の煙として置く。他のモードでも形が見えるよう少し置いておく
+    const amt = sm.source === "release" ? 2.2 : 0.6;
+    smkPass("init", "sc0", { uSrc: "src" }, U => { gl.uniform1f(U("uA"), amt); gl.uniform1f(U("uAT"), amt * 0.6); });
+    SMK.needReset = false; SMK.steps = 0;
+  }
+
+  function smkStep() {
+    const dt = sm.dt, open = $("smkOpen").checked ? 1 : 0;
+    const emit = sm.source === "release" ? 0 : sm.emit;
+    const sp = SMK.splat; SMK.splat = null;
+    const splat = U => {
+      gl.uniform4f(U("uSplat"), sp ? sp.pos[0] : 0, sp ? sp.pos[1] : 0, sp ? sp.pos[2] : 0, sp ? 1 : 0);
+      gl.uniform3f(U("uSplatF"), sp ? sp.f[0] : 0, sp ? sp.f[1] : 0, sp ? sp.f[2] : 0);
+      gl.uniform1f(U("uSplatR"), SMK.N * 0.07);
+    };
+    // 1. 注入
+    smkPass("injS", "sc1", { uSc: "sc0", uSrc: "src" }, U => {
+      gl.uniform1f(U("uRate"), 0.02 * emit); gl.uniform1f(U("uRateT"), 0.03 * emit); gl.uniform1f(U("uDt"), dt); splat(U);
+    }); swap("sc0", "sc1");
+    smkPass("injV", "vel1", { uVel: "vel0", uSrc: "src", uSc: "sc0" }, U => {
+      gl.uniform1f(U("uSpeed"), sm.source === "filament" ? 0.35 * emit : 0); gl.uniform1f(U("uDt"), dt); splat(U);
+      gl.uniform1f(U("uTurb"), sm.turb); gl.uniform1f(U("uTime"), SMK.steps * dt * 0.05);
+    }); swap("vel0", "vel1");
+    // 2. 速度の自己移流
+    smkPass("adv1", "velT", { uVel: "vel0", uQ: "vel0" }, U => gl.uniform1f(U("uDt"), dt));
+    smkPass("adv2", "vel1", { uVel: "vel0", uQ: "vel0", uFwd: "velT" }, U => { gl.uniform1f(U("uDt"), dt); gl.uniform4f(U("uDecay"), 1, 1, 1, 1); });
+    swap("vel0", "vel1");
+    // 3, 4. 浮力 + 渦度閉じ込め
+    smkPass("vort", "vort", { uVel: "vel0" });
+    smkPass("force", "vel1", { uVel: "vel0", uSc: "sc0", uVort: "vort" }, U => {
+      gl.uniform1f(U("uDt"), dt); gl.uniform1f(U("uAlpha"), sm.alpha); gl.uniform1f(U("uBeta"), sm.beta); gl.uniform1f(U("uEps"), sm.vort);
+    }); swap("vel0", "vel1");
+    // 5. 非圧縮化
+    smkPass("div", "div", { uVel: "vel0" }, U => gl.uniform1i(U("uOpen"), open));
+    for (let i = 0; i < SMK.jacobi; i++) { smkPass("jacobi", "p1", { uP: "p0", uDiv: "div" }, U => gl.uniform1i(U("uOpen"), open)); swap("p0", "p1"); }
+    smkPass("grad", "vel1", { uVel: "vel0", uP: "p0" }, U => gl.uniform1i(U("uOpen"), open)); swap("vel0", "vel1");
+    // 6. ρ, T の移流・拡散・減衰（T は少し早く冷める）
+    smkPass("adv1", "scT", { uVel: "vel0", uQ: "sc0" }, U => gl.uniform1f(U("uDt"), dt));
+    smkPass("adv2", "sc1", { uVel: "vel0", uQ: "sc0", uFwd: "scT" }, U => {
+      gl.uniform1f(U("uDt"), dt); const d = Math.pow(sm.decay, dt); gl.uniform4f(U("uDecay"), d, Math.pow(sm.decay * 0.985, dt), 1, 1);
+    }); swap("sc0", "sc1");
+    if (sm.kappa > 0) {
+      // b = sc0、反復は sc1 / scT を交互に
+      let x = "sc0", y = "sc1";
+      for (let i = 0; i < 3; i++) {
+        smkPass("diff", y, { uX: x, uB: "sc0" }, U => gl.uniform1f(U("uA"), sm.kappa * dt));
+        x = y; y = y === "sc1" ? "scT" : "sc1";
+      }
+      swap("sc0", x);
+    }
+    // 対称性の保持
+    if (sm.sym > 0.001) {
+      const ns = Math.round(q.n), mir = Math.abs(q.omega) < 1e-9 ? 1 : 0;
+      for (const [f, g, vec] of [["sc0", "sc1", 0], ["vel0", "vel1", 1]]) {
+        smkPass("sym", g, { uQ: f }, U => {
+          gl.uniform1i(U("uVec"), vec); gl.uniform1i(U("uNs"), Math.min(16, ns)); gl.uniform1i(U("uMir"), mir); gl.uniform1f(U("uStr"), sm.sym);
+        }); swap(f, g);
+      }
+    }
+    SMK.steps++;
+  }
+
+  const LOOKS = {
+    smoke: { bg1: "#2b2e37", bg2: "#060709", col: "#ece9e3", alb: 0.93, conc: 2.6, g: 0.45, ink: 0, tone: 1, light: [-0.45, 0.8, 0.4] },
+    ink:   { bg1: "#d6eef2", bg2: "#3b8cab", col: "#c23a6e", alb: 0.35, conc: 6, g: 0.3, ink: 1, tone: 0, light: [0.3, 0.9, 0.3] },
+  };
+  function smkRender(scale) {
+    const S = Math.max(64, Math.round(fbW * scale));
+    ensureTarget(S);
+    const L = LOOKS[$("smkLook").value], pr = SMK.P.render, U = n => smkU(pr, n);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, vr.fbo);
+    gl.viewport(0, 0, S, S);
+    gl.useProgram(pr);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, SMK.t.sc0); gl.uniform1i(U("uSc"), 0);
+    gl.uniform1f(U("uN"), SMK.N); gl.uniform1i(U("uNi"), SMK.N); gl.uniform1i(U("uTx"), SMK.tx); gl.uniform2f(U("uAtlas"), SMK.W, SMK.W);
+    const R = rotMat();
+    gl.uniformMatrix3fv(U("uRot"), false, R);
+    gl.uniform1f(U("uCam"), 3.2 / view.zoom);
+    gl.uniform1f(U("uFrame"), performance.now() % 997);
+    gl.uniform1f(U("uSize"), 2 * SMK_HALF);
+    gl.uniform3f(U("uMin"), -SMK_HALF, -SMK_HALF, SMK_Z0);
+    const st = SMK_Q[SMK.lvl];
+    gl.uniform1i(U("uSteps"), Math.round(st.steps * (dragging ? 0.6 : 1)));
+    gl.uniform1i(U("uShSteps"), st.sh);
+    const lv = L.light, ln = Math.hypot(...lv), lvn = lv.map(v => v / ln);
+    gl.uniform3fv(U("uLightV"), lvn);
+    gl.uniform3fv(U("uLight"), [0, 1, 2].map(i => R[i * 3] * lvn[0] + R[i * 3 + 1] * lvn[1] + R[i * 3 + 2] * lvn[2]));
+    gl.uniform3fv(U("uCol"), srgb2lin($("smkCol").value));
+    gl.uniform3fv(U("uBg1"), srgb2lin(L.bg1)); gl.uniform3fv(U("uBg2"), srgb2lin(L.bg2));
+    gl.uniform1f(U("uConc"), L.conc * sm.dens); gl.uniform1f(U("uAlb"), L.alb); gl.uniform1f(U("uG"), L.g);
+    gl.uniform1f(U("uTemp"), $("smkTemp").checked ? 1.2 : 0); gl.uniform1f(U("uInk"), L.ink);
+    // 前フレームと指数平均してジッターの粒を均す（動かしている間は平均しない）
+    const blend = !dragging && SMK.lastS === S ? 0.4 : 1;
+    SMK.lastS = S;
+    gl.enable(gl.BLEND); gl.blendColor(0, 0, 0, blend); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    gl.bindVertexArray(quadVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+    present(L.tone, 1);
+  }
+
+  // 自動品質：フレーム時間を見て、描画の解像度・ステップと Jacobi 回数を段階的に下げる／戻す
+  const SMK_Q = [{ scale: 1, steps: 112, sh: 10, jac: 99 }, { scale: 0.8, steps: 96, sh: 8, jac: 32 },
+                 { scale: 0.65, steps: 80, sh: 8, jac: 24 }, { scale: 0.5, steps: 64, sh: 6, jac: 18 }, { scale: 0.4, steps: 52, sh: 5, jac: 14 }];
+  function smokeFrame(now) {
+    if (!SMK.ok || !volume.ready) return;
+    resize();
+    if (SMK.N !== +$("smkGrid").value && !smkAlloc(+$("smkGrid").value)) { setMode("iso"); return; }
+    if (SMK.srcDirty || SMK.srcH !== view.height) smkSource();
+    if (SMK.needReset) smkReset();
+    if ($("smkAuto").checked) {
+      SMK.accDt += motion.dt; SMK.accN++;
+      if (SMK.accN >= 20) {
+        const avg = SMK.accDt / SMK.accN;
+        if (avg > 0.036 && SMK.lvl < SMK_Q.length - 1) SMK.lvl++;
+        else if (avg < 0.022 && SMK.lvl > 0) SMK.lvl--;
+        SMK.fps = 1 / avg; SMK.accDt = 0; SMK.accN = 0;
+      }
+    } else SMK.lvl = 0;
+    SMK.jacobi = Math.min(Math.round(sm.jacobi), SMK_Q[SMK.lvl].jac);
+    if (SMK.playing) smkStep();
+    smkRender(SMK_Q[SMK.lvl].scale * (dragging && !$("smkStir").checked ? 0.6 : 1));
+    statusEl.textContent = `煙 ${SMK.N}³ ${SMK.fmtName}  ${SMK.fps ? SMK.fps.toFixed(0) + "fps" : ""}  ${SMK.playing ? "" : "一時停止"}`;
+  }
+
+  // かき混ぜ：ドラッグを速度の衝撃に変える（回転の代わりに）
+  function smokeStir(e, px, py) {
+    const r = canvas.getBoundingClientRect();
+    const nx = ((e.clientX - r.left) / r.width) * 2 - 1, ny = 1 - ((e.clientY - r.top) / r.height) * 2;
+    const cam = 3.2 / view.zoom, dv = [nx / 2.5, ny / 2.5, -1], dl = Math.hypot(...dv);
+    const d = dv.map(v => v / dl), t = cam * -d[2];                 // 視線上で原点に最も近い点
+    const pv = [d[0] * t, d[1] * t, cam + d[2] * t], R = rotMat();
+    const toObj = v => [0, 1, 2].map(i => R[i * 3] * v[0] + R[i * 3 + 1] * v[1] + R[i * 3 + 2] * v[2]);
+    const po = toObj(pv), fv = toObj([(e.clientX - px), -(e.clientY - py), 0]);
+    const cell = SMK.N / (2 * SMK_HALF);
+    SMK.splat = { pos: [(po[0] + SMK_HALF) * cell, (po[1] + SMK_HALF) * cell, (po[2] - SMK_Z0) * cell],
+                  f: fv.map(v => v * 0.08 * sm.dt) };
+  }
+
+  // 自動回転：BPM に合わせて 1 拍ごとに速さがゆるく脈打つ（平均 7.5°/拍、48 拍＝12 小節で 1 周）
+  const motion = { bpm: 80, phase: 0, last: 0, dt: 1 / 60, beats: 0 };
+  (function loop(now) {
+    now = now || performance.now();
+    motion.dt = Math.min(0.1, Math.max(0.001, (now - (motion.last || now)) / 1000)); motion.last = now;
+    motion.beats += motion.dt * motion.bpm / 60;
+    if ($("spin").checked && !dragging) {
+      const bps = motion.bpm / 60;
+      motion.phase = (motion.phase + motion.dt * bps) % 1;
+      view.yaw += motion.dt * bps * (7.5 * Math.PI / 180) * (1 + 0.5 * Math.cos(2 * Math.PI * motion.phase));
+      dirty = true;
+    }
+    if (mode === "points") { if (dirty) draw(); }
+    else if (mode === "flow") { if (gl && volRenderOK) drawFlow(); }
+    else if (mode === "smoke") smokeFrame(now);
+    else if (gl && volRenderOK) renderVolume(now);
+    requestAnimationFrame(loop);
+  })();
+
+  canvas.addEventListener("pointerdown", e => {
+    canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); dragging = true;
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); zoom0 = view.zoom; }
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!ptrs.has(e.pointerId)) return;
+    const [px, py] = ptrs.get(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      view.zoom = Math.max(0.4, Math.min(4, zoom0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch0));
+    } else if (mode === "smoke" && $("smkStir").checked) {
+      smokeStir(e, px, py);
+    } else {
+      view.yaw += (e.clientX - px) * 0.008;
+      view.pitch = Math.max(-1.57, Math.min(1.57, view.pitch + (e.clientY - py) * 0.008));
+    }
+    dirty = true;
+  });
+  const up = e => { ptrs.delete(e.pointerId); dragging = ptrs.size > 0; };
+  canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault(); view.zoom = Math.max(0.4, Math.min(4, view.zoom * Math.exp(-e.deltaY * 0.001))); dirty = true;
+  }, { passive: false });
+  window.addEventListener("resize", () => { dirty = true; });
+
+  // ==================================================================================
+  // UI
+  // ==================================================================================
+  const PARAMS = [
+    ["n", "n", 3, 12, 1, 0], ["lam", "λ", -3, 3, 0.001, 3], ["alpha", "α", -6, 6, 0.001, 3],
+    ["beta", "β", -2, 2, 0.001, 3], ["gamma", "γ", -1.5, 1.5, 0.001, 3], ["omega", "ω", -0.5, 0.5, 0.001, 3],
+  ];
+  const PARAMS3 = [
+    ["kap", "κ 結合", -0.5, 0.5, 0.001, 3], ["mu", "μ 記憶", 0, 0.95, 0.001, 3],
+    ["del", "δ 起伏", -1.5, 1.5, 0.001, 3], ["eps", "ε お椀", -1, 1, 0.001, 3],
+  ];
+  // 自然のかたち：回転対称の「秩序」と、カオス軌道が刻む細部の「混沌」が同居するもの
+  const PRESETS = [
+    ["クラゲ — Jellyfish", { n: 10, lam: 2.591, alpha: -4.072, beta: 1.106, gamma: -0.888, omega: 0.163, kap: -0.154, mu: 0.279, del: -0.719, eps: -0.432 },
+      "傘のひだは 10 回対称に整い、縁は不規則に波打つ。"],
+    ["薔薇 — Rose", { n: 5, lam: 2.564, alpha: -3.498, beta: 0.407, gamma: 1.121, omega: 0.085, kap: 0.083, mu: 0.442, del: 0.445, eps: 0.481 },
+      "ω ≠ 0 で鏡映が破れ、花弁が一方向に巻き込む 5 回対称。"],
+    ["百合 — Lily", { n: 3, lam: 2.287, alpha: -4.237, beta: -1.344, gamma: 0.181, omega: 0, kap: -0.193, mu: 0.775, del: -0.563, eps: -0.014 },
+      "単子葉植物の花と同じ 3 回対称のつぼみ。"],
+    ["菊 — Chrysanthemum", { n: 12, lam: -2.661, alpha: 3.61, beta: 0.31, gamma: -0.437, omega: 0, kap: -0.226, mu: 0.6, del: -0.138, eps: 0.289 },
+      "12 回対称に並ぶ小花の粒。中心ほど密になる。"],
+    ["蓮の花托 — Lotus Pod", { n: 10, lam: 2.285, alpha: -2.005, beta: -0.524, gamma: 1.167, omega: 0, kap: 0, mu: 0.679, del: 0.075, eps: 0.318 },
+      "同心円状に並ぶ穴。κ = 0 で平面の花がそのまま厚みを持つ。"],
+    ["イソギンチャク — Sea Anemone", { n: 11, lam: -2.007, alpha: 1.74, beta: 0.77, gamma: 1.022, omega: 0, kap: 0.111, mu: 0.491, del: -0.62, eps: 0.493 },
+      "放射状に伸びる触手。一本ごとの起伏はカオスが決める。"],
+    ["ウニの殻 — Urchin Test", { n: 11, lam: 2.723, alpha: -4.085, beta: 1.064, gamma: -0.668, omega: 0, kap: -0.259, mu: 0.464, del: 0.012, eps: 0.457 },
+      "ドーム状の殻に刻まれた放射状の溝。"],
+    ["ハイビスカス — Hibiscus", { n: 6, lam: -2.442, alpha: 4.305, beta: 1.447, gamma: -0.619, omega: 0.18, kap: -0.202, mu: 0.522, del: 0.843, eps: -0.379 },
+      "重なり合う 6 枚の花弁。δ が大きく、花弁が交互に反る。"],
+    ["朝顔 — Morning Glory", { n: 9, lam: -2.637, alpha: 4.544, beta: -0.323, gamma: 1.084, omega: 0, kap: -0.01, mu: 0.302, del: -0.305, eps: 0.003 },
+      "ひだを畳んだラッパ形。折り目は 9 回対称。"],
+    ["サンゴ — Coral", { n: 8, lam: 2.356, alpha: -4.973, beta: -0.914, gamma: 0.184, omega: 0.277, kap: -0.149, mu: 0.545, del: 0.347, eps: -0.279 },
+      "環状に群れて育つ、ねじれた枝の塊。"],
+  ];
+
+  const q = { ...PRESETS[0][1] };
+  const statusEl = $("status"), presetSel = $("preset");
+  const shows = [];
+
+  function slider(parent, label, lo, hi, st, digits, get, set) {
+    const lab = document.createElement("label");
+    lab.innerHTML = `<span>${label}</span>`;
+    const inp = Object.assign(document.createElement("input"), { type: "range", min: lo, max: hi, step: st });
+    const out = document.createElement("output");
+    const show = () => { inp.value = get(); out.textContent = (+get()).toFixed(digits); };
+    inp.addEventListener("input", () => { set(+inp.value); out.textContent = (+inp.value).toFixed(digits); });
+    lab.append(inp, out); parent.append(lab); show(); shows.push(show);
+  }
+  let timer = null;
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(rebuild, 60); };
+  for (const [k, label, lo, hi, st, dg] of PARAMS)
+    slider($("sliders"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
+  for (const [k, label, lo, hi, st, dg] of PARAMS3)
+    slider($("sliders3"), label, lo, hi, st, dg, () => q[k], v => { q[k] = v; presetSel.value = ""; schedule(); });
+  slider($("spinSliders"), "テンポ BPM", 40, 140, 1, 0, () => motion.bpm, v => { motion.bpm = v; });
+  slider($("viewSliders"), "高さ倍率", 0, 1.2, 0.01, 2, () => view.height, v => { view.height = v; dirty = true; });
+
+  // ver.2: ボリューム描画の設定
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  const vs = { steps: coarse ? 96 : 160, thr: 0.6, ior: 1.45, absK: 2.6, exposure: 1 };
+  const vset = k => v => { vs[k] = v; vr.parVer++; };
+  slider($("volSliders"), "ステップ", 32, 320, 8, 0, () => vs.steps, vset("steps"));
+  slider($("isoSliders"), "しきい値", 0.02, 0.98, 0.01, 2, () => vs.thr, vset("thr"));
+  slider($("glassSliders"), "屈折率", 1.3, 1.6, 0.01, 2, () => vs.ior, vset("ior"));
+  slider($("glassSliders"), "吸収の強さ", 0, 4, 0.01, 2, () => vs.absK, vset("absK"));
+  // 流線の設定。形が変わる設定は再計算（少し待ってから）、見た目だけの設定は即時
+  const fs = { phi: 82, grid: coarse ? 52 : 60, thr: 0.45, steps: 320, alpha: 0.5, glow: 1 };
+  let lineTimer = null;
+  const fsetLines = k => v => { fs[k] = v; clearTimeout(lineTimer); lineTimer = setTimeout(requestLines, 150); };
+  const fsetLook = k => v => { fs[k] = v; };
+  slider($("flowSliders"), "流れの向き", 0, 90, 1, 0, () => fs.phi, fsetLines("phi"));
+  slider($("flowSliders"), "密度", 32, 110, 1, 0, () => fs.grid, fsetLines("grid"));
+  slider($("flowSliders"), "しきい値", 0.05, 0.95, 0.01, 2, () => fs.thr, fsetLines("thr"));
+  slider($("flowSliders"), "線の長さ", 40, 800, 10, 0, () => fs.steps, fsetLines("steps"));
+  slider($("flowSliders2"), "線の濃さ", 0.05, 1, 0.01, 2, () => fs.alpha, fsetLook("alpha"));
+  slider($("flowSliders2"), "光の粒", 0, 2, 0.01, 2, () => fs.glow, fsetLook("glow"));
+  const lineParams = () => ({ lid: ++flow.lid, phi: fs.phi, grid: Math.round(fs.grid), thr: fs.thr, steps: Math.round(fs.steps),
+                              tries: 60000, maxVerts: coarse ? 90000 : 140000, minSize: 0.16 });
+  const STYLES = [["墨流し", "#f3eee4", "#7a7f8a", "#111318"], ["紅と藍", "#f6efe8", "#e0507f", "#1c1757"],
+                  ["藍染", "#eef2f3", "#5b8fd0", "#0b1e4d"], ["翡翠", "#f1f4ef", "#4fbf9a", "#073b30"],
+                  ["夜光", "#05060b", "#1f6bff", "#c8f6ff"], ["金糸", "#0c0907", "#9c561a", "#ffe3a3"]];
+  pickList($("flowStyle"), STYLES, "スタイル", ([, b, c1, c2]) => { $("flowBg").value = b; $("ink1").value = c1; $("ink2").value = c2; },
+           ["flowBg", "ink1", "ink2"]);
+  $("flowStyle").value = "4";
+  $("absorb").addEventListener("input", () => { vr.parVer++; });
+  $("material").addEventListener("change", () => {
+    $("glassOnly").hidden = $("material").value !== "glass"; $("metalOnly").hidden = $("material").value !== "mercury"; vr.parVer++;
+  });
+  // 金属の色（F0 を sRGB で表したもの）と、背景・照明のプリセット
+  const METALS = [["水銀", "#e3e3e6"], ["銀", "#fbfaf6"], ["金", "#ffda91"], ["銅", "#f9cfb9"],
+                  ["ローズゴールド", "#f7c6c2"], ["チタン", "#c1bab1"], ["黒鉄", "#7d7f84"]];
+  const ENVS = [["スタジオ", "#9c9ea8", "#38393e", "#ffffff"], ["白ホリゾント", "#f2f1ee", "#bdbbb6", "#ffffff"],
+                ["夜", "#1d2233", "#06070b", "#cfd8ff"], ["夕暮れ", "#e8a87c", "#3a2340", "#ffd2a6"],
+                ["森", "#9fbf9a", "#1f3324", "#f4ffe8"]];
+  function pickList(sel, list, label, apply, inputs) {
+    list.forEach(([name], i) => sel.append(new Option(`${label}: ${name}`, i)));
+    sel.append(new Option(`${label}: カスタム`, ""));
+    sel.addEventListener("change", () => { if (sel.value !== "") { apply(list[+sel.value]); vr.parVer++; } });
+    for (const id of inputs) $(id).addEventListener("input", () => { sel.value = ""; vr.parVer++; });
+  }
+  pickList($("metalPreset"), METALS, "金属", ([, c]) => { $("metal").value = c; }, ["metal"]);
+  pickList($("envPreset"), ENVS, "背景", ([, a, b, c]) => { $("envTop").value = a; $("envBot").value = b; $("envLight").value = c; },
+           ["envTop", "envBot", "envLight"]);
+  slider($("isoExposure"), "露出", 0.3, 3, 0.01, 2, () => vs.exposure, vset("exposure"));
+
+  // 煙の設定
+  const sm = { sym: 0.5, turb: 0.4, alpha: 0.05, beta: 0.6, vort: 1.0, kappa: 0, decay: 0.985, emit: 1, dt: 1, jacobi: 24, dens: 1, source: "emit" };
+  slider($("smkSym"), "対称性の保持", 0, 1, 0.01, 2, () => sm.sym, v => { sm.sym = v; });
+  slider($("smkLookSliders"), "濃さ", 0.2, 3, 0.01, 2, () => sm.dens, v => { sm.dens = v; });
+  for (const [k, label, lo, hi, st, dg] of [["alpha", "浮力 α 重さ", 0, 0.5, 0.005, 3], ["beta", "浮力 β 熱", 0, 2, 0.01, 2],
+      ["vort", "渦度", 0, 2, 0.01, 2], ["turb", "乱れ", 0, 1.5, 0.01, 2], ["kappa", "拡散 κ", 0, 0.3, 0.005, 3], ["decay", "減衰", 0.95, 1, 0.001, 3],
+      ["emit", "放出量", 0, 3, 0.01, 2], ["dt", "時間刻み", 0.2, 2, 0.01, 2], ["jacobi", "Jacobi 回数", 8, 60, 1, 0]])
+    slider($("smkSliders"), label, lo, hi, st, dg, () => sm[k], v => { sm[k] = v; });
+  $("smkPlay").addEventListener("click", () => { SMK.playing = !SMK.playing; $("smkPlay").textContent = SMK.playing ? "一時停止" : "再生"; });
+  $("smkReset").addEventListener("click", () => { SMK.needReset = true; });
+  $("smkSource").addEventListener("change", e => { sm.source = e.target.value; SMK.needReset = true; });
+  $("smkLook").addEventListener("change", e => { $("smkCol").value = LOOKS[e.target.value].col; });
+  if (!SMK.ok) for (const o of $("renderMode").options) if (o.value === "smoke") { o.disabled = true; o.text += "（この環境では使えません）"; }
+
+  let pointsStale = true;
+  const volKey = () => JSON.stringify([q, $("volRes").value]);
+  const flowKey = () => volKey() + JSON.stringify(fs);
+  function setMode(m) {
+    if (m !== "points" && !volRenderOK) m = "points";
+    if (m === "smoke" && !SMK.ok) m = "iso";
+    mode = m; $("renderMode").value = m;
+    $("volCommon").hidden = m === "points";
+    $("isoPanel").hidden = m !== "iso";
+    $("flowPanel").hidden = m !== "flow";
+    $("smokePanel").hidden = m !== "smoke";
+    $("volSliders").hidden = m !== "iso";
+    $("pointView").hidden = $("pointColor").hidden = m !== "points";
+    vr.sig = ""; dirty = true;
+    if (m === "points") { if (pointsStale) rebuild(); else if (nPts) statusEl.textContent = pointsLabel; }
+    else if (m === "flow") { if (flow.key !== flowKey()) requestLines(); else statusEl.textContent = flow.label; }
+    else if (volume.key !== volKey()) requestVolume();
+    else if (volume.label) statusEl.textContent = volume.label;
+  }
+  $("renderMode").addEventListener("change", e => setMode(e.target.value));
+  $("volRes").addEventListener("change", () => { if (mode !== "points") requestVolume(); });
+  if (!volRenderOK) {
+    for (const o of $("renderMode").options) if (o.value !== "points") { o.disabled = true; o.text += "（この環境では使えません）"; }
+  }
+  const syncAll = () => shows.forEach(f => f());
+
+  presetSel.append(new Option("— プリセット —", ""));
+  PRESETS.forEach(([name], i) => presetSel.append(new Option(name, i)));
+  presetSel.addEventListener("change", () => {
+    if (presetSel.value !== "") { Object.assign(q, PRESETS[+presetSel.value][1]); syncAll(); rebuild(); }
+    presetNote();
+  });
+  const presetNote = () => { $("presetNote").textContent = presetSel.value === "" ? "" : PRESETS[+presetSel.value][2]; };
+  $("colorMode").addEventListener("change", () => { dirty = true; });
+  $("count").value = matchMedia("(pointer: coarse)").matches ? "500000" : "1500000";
+  $("count").addEventListener("change", rebuild);
+  $("spin").addEventListener("change", () => { dirty = true; });
+
+  let pointsLabel = "";
+  function rebuild() {
+    if (!gl) return false;
+    presetNote();
+    if (mode !== "points") { pointsStale = true; requestVolume(); return true; }
+    pointsStale = false;
+    const qq = { ...q, n: Math.round(q.n) };
+    const pr = probe(qq);
+    if (!pr) { nPts = 0; statusEl.textContent = "diverged / fixed point"; gl.clearColor(...hex2rgb(color.bg).map(v => v / 255), 1); gl.clear(gl.COLOR_BUFFER_BIT); return false; }
+    const { P, N } = genPoints(qq, +$("count").value, pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, P.subarray(0, N * 3), gl.STATIC_DRAW);
+    nPts = N; dirty = true;
+    statusEl.textContent = pointsLabel = `n=${qq.n}  ${(N / 1e6).toFixed(1)}M pts${floatOK ? "" : "  (low precision)"}`;
+    return true;
+  }
+
+  const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+  $("random").addEventListener("click", () => {
+    for (let t = 0; t < 1500; t++) {
+      const c = { n: 3 + Math.floor(Math.random() * 8), lam: rnd(-2.8, 2.8), alpha: rnd(-5, 5), beta: rnd(-1.5, 1.5),
+                  gamma: rnd(-1.2, 1.2), omega: Math.random() < 0.5 ? 0 : rnd(-0.3, 0.3),
+                  kap: Math.random() < 0.3 ? 0 : rnd(-0.3, 0.3), mu: rnd(0.2, 0.9), del: rnd(-1, 1), eps: rnd(-0.5, 0.5) };
+      const pr = probe(c);
+      if (!pr) continue;
+      const s = quality(c, pr);
+      if (s.D > 1.3 && s.D < 2.5 && s.wr > 0.1 && s.n2 > 400 && s.xy > 0.12 && s.lyap > 0.02) {
+        Object.assign(q, c); presetSel.value = ""; syncAll(); rebuild(); return;
+      }
+    }
+    statusEl.textContent = "見つかりませんでした。もう一度どうぞ";
+  });
+  $("save").addEventListener("click", () => {
+    if (mode === "points") draw(); else if (mode === "flow") drawFlow();
+    else if (mode === "smoke") { if (SMK.N) smkRender(SMK_Q[SMK.lvl].scale); }
+    else if (volume.ready) present();
+    const a = document.createElement("a"); a.download = `icon3d_${mode}_n${Math.round(q.n)}.png`; a.href = canvas.toDataURL(); a.click();
+  });
+
+  // 色彩 UI
+  const palSel = $("palette");
+  for (const [k, [name]] of Object.entries(PALETTES)) palSel.append(new Option(name, k));
+  function recolor() {
+    store.set("gfoc.color.v1", color);
+    $("customColors").hidden = color.palette !== "custom";
+    buildLUT(); uploadLUT();
+  }
+  for (const [k, label, lo, hi, st, dg] of [["hue", "色相", -180, 180, 1, 0], ["gamma", "ガンマ", 0.3, 2, 0.01, 2], ["exposure", "露出", 0.4, 3, 0.01, 2]])
+    slider($("colorSliders"), label, lo, hi, st, dg, () => color[k], v => { color[k] = v; recolor(); });
+  function syncColor() { palSel.value = color.palette; for (const k of ["c1", "c2", "c3", "bg"]) $(k).value = color[k]; syncAll(); }
+  palSel.addEventListener("change", () => { color.palette = palSel.value; recolor(); });
+  for (const k of ["c1", "c2", "c3", "bg"]) $(k).addEventListener("input", e => { color[k] = e.target.value; recolor(); });
+  $("resetColor").addEventListener("click", () => { Object.assign(color, COLOR_DEFAULT); syncColor(); recolor(); });
+
+  // 起動
+  syncColor(); buildLUT();
+  if (gl) {
+    uploadLUT(); presetSel.value = "0"; presetNote();
+    const sp = new URLSearchParams(location.search), m0 = sp.get("mode");
+    // ?p=n,λ,α,β,γ,ω,κ,μ,δ,ε でパラメータを直接指定（共有用）
+    const pv = (sp.get("p") || "").split(",").map(Number);
+    if (pv.length === 10 && pv.every(Number.isFinite)) {
+      ["n", "lam", "alpha", "beta", "gamma", "omega", "kap", "mu", "del", "eps"].forEach((k, i) => { q[k] = pv[i]; });
+      presetSel.value = ""; syncAll();
+    }
+    if (sp.get("mat") === "mercury" || sp.get("mat") === "glass") { $("material").value = sp.get("mat"); $("material").dispatchEvent(new Event("change")); }
+    setMode(["points", "iso", "flow", "smoke"].includes(m0) ? m0 : m0 === "ink" ? "flow" : (volRenderOK ? "iso" : "points"));
+  }
+})();
+</script>
+</body>
+</html>
