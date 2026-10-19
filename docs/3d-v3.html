@@ -138,9 +138,11 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         <h4 style="margin-top:18px">煙</h4>
         <div class="row"><button id="smkPlay">一時停止</button><button id="smkReset">リセット</button></div>
         <div id="smkSym"></div>
+        <div id="smkBreath"></div>
         <select id="smkSource" aria-label="発生源">
+          <option value="breath" selected>発生源: 呼吸（秩序 ⇄ 混沌）</option>
           <option value="release">発生源: 解放（彫刻がほどける）</option>
-          <option value="emit" selected>発生源: 継続放出</option>
+          <option value="emit">発生源: 継続放出</option>
           <option value="filament">発生源: 流線放出（フィラメント方向に吹く）</option>
         </select>
         <select id="smkLook" aria-label="見た目">
@@ -255,6 +257,10 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     <tr><td>6. ρ, T の移流拡散</td><td>MacCormack で移流、陰的 Jacobi で拡散、減衰</td></tr>
     <tr><td>対称性の保持</td><td>ρ と u を n 回回転（ω = 0 なら鏡映も）で平均した場と補間。0 で乱流、1 で対称な煙の花</td></tr>
   </table>
+  <p><strong>呼吸（秩序 ⇄ 混沌）：</strong> 初期設定の発生源です。テンポの小節に同期した周期で
+  「秩序（形）→ 拡散 → 混沌 → 収束 → 秩序」を繰り返します。浮力は使わず、煙のある所だけを水平に外へ押して横に広げます
+  （押された分は周りの流れが戻るので、渦の輪ができます）。非圧縮の流れでは煙を集められないため、収束の局面では煙の密度だけに
+  「形へ向かう速度」を足して移流します（発生源を大きくぼかした場の勾配が、形の方向を指します）。最後に目標の形へ少しずつ寄せて、元の形に戻します。</p>
   <p>描画は ver.2 のインク用ボリュームレンダラ（前から後ろへの合成、シャドウレイの単一散乱、Henyey–Greenstein、ジッター）を煙の密度に使っています。
   重いときは描画の解像度・ステップ数と Jacobi 回数を自動で下げます。float の描画先が使えない環境では煙モードは選べません。</p>
 
@@ -1221,10 +1227,11 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
         float s = F(uSrc, c).x; o = vec4(s * uA, s * uAT, 0.0, 0.0); }`,
     // 1. 注入：ρ, T（とかき混ぜ）
-    injS: `uniform sampler2D uSc, uSrc; uniform float uRate, uRateT, uDt; uniform vec4 uSplat; uniform float uSplatR;
+    injS: `uniform sampler2D uSc, uSrc; uniform float uRate, uRateT, uDt, uRelax, uTarget; uniform vec4 uSplat; uniform float uSplatR;
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
         vec4 s = F(uSc, c); float src = F(uSrc, c).x;
         s.xy += vec2(uRate, uRateT) * src * uDt;
+        s.x = mix(s.x, src * uTarget, clamp(uRelax * uDt, 0.0, 1.0));      // 呼吸：元の形へ少しずつ寄せる
         if (uSplat.w > 0.0) { vec3 d = vec3(c) + 0.5 - uSplat.xyz; s.x += 0.15 * uSplat.w * exp(-dot(d, d) / (uSplatR * uSplatR)); }
         o = s; }`,
     injV: `uniform sampler2D uVel, uSrc, uSc; uniform float uSpeed, uDt, uSplatR, uTurb, uTime; uniform vec4 uSplat; uniform vec3 uSplatF;
@@ -1244,11 +1251,41 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         o = vec4(u, 0.0); }`,
     // 2, 6. 移流（MacCormack）：前進セミラグランジュ → 逆向きで誤差を見積もって補正し、近傍の範囲に制限
     adv1: `uniform sampler2D uVel, uQ; uniform float uDt;
+      // 呼吸のときだけ煙（スカラー）に足す速度。非圧縮ではないので、広げることも集めることもできる
+      uniform sampler2D uTgt, uSrcX; uniform float uOut, uGather;
+      vec3 extraVel(ivec3 c) {
+        if (uOut == 0.0 && uGather == 0.0) return vec3(0.0);
+        vec2 r = vec2(c.xy) + 0.5 - 0.5 * uN; float rl = length(r) + 1e-3;
+        // 水平に外へ（壁の手前で止まる）
+        vec3 e = uOut * vec3(r / rl, 0.0) * smoothstep(0.0, 6.0, rl) * (1.0 - smoothstep(0.55, 0.85, rl / (0.5 * uN)));
+        if (uGather > 0.0) {
+          vec3 g = vec3(F(uTgt, c + EX).x - F(uTgt, c - EX).x, F(uTgt, c + EY).x - F(uTgt, c - EY).x, F(uTgt, c + EZ).x - F(uTgt, c - EZ).x);
+          float gl = length(g);
+          vec3 dir = gl > 1e-9 ? g / gl : vec3(-r / rl, 0.0);                           // 形の方へ
+          e += uGather * dir * (1.0 - smoothstep(0.25, 0.8, F(uSrcX, c).x));             // 形に着いたら止まる
+        }
+        return e;
+      }
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
-        o = S(uQ, vec3(c) + 0.5 - uDt * F(uVel, c).xyz); }`,
+        o = S(uQ, vec3(c) + 0.5 - uDt * (F(uVel, c).xyz + extraVel(c))); }`,
     adv2: `uniform sampler2D uVel, uQ, uFwd; uniform float uDt; uniform vec4 uDecay;
+      // 呼吸のときだけ煙（スカラー）に足す速度。非圧縮ではないので、広げることも集めることもできる
+      uniform sampler2D uTgt, uSrcX; uniform float uOut, uGather;
+      vec3 extraVel(ivec3 c) {
+        if (uOut == 0.0 && uGather == 0.0) return vec3(0.0);
+        vec2 r = vec2(c.xy) + 0.5 - 0.5 * uN; float rl = length(r) + 1e-3;
+        // 水平に外へ（壁の手前で止まる）
+        vec3 e = uOut * vec3(r / rl, 0.0) * smoothstep(0.0, 6.0, rl) * (1.0 - smoothstep(0.55, 0.85, rl / (0.5 * uN)));
+        if (uGather > 0.0) {
+          vec3 g = vec3(F(uTgt, c + EX).x - F(uTgt, c - EX).x, F(uTgt, c + EY).x - F(uTgt, c - EY).x, F(uTgt, c + EZ).x - F(uTgt, c - EZ).x);
+          float gl = length(g);
+          vec3 dir = gl > 1e-9 ? g / gl : vec3(-r / rl, 0.0);                           // 形の方へ
+          e += uGather * dir * (1.0 - smoothstep(0.25, 0.8, F(uSrcX, c).x));             // 形に着いたら止まる
+        }
+        return e;
+      }
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
-        vec3 p = vec3(c) + 0.5, u = F(uVel, c).xyz;
+        vec3 p = vec3(c) + 0.5, u = F(uVel, c).xyz + extraVel(c);
         vec4 r = F(uFwd, c) + 0.5 * (F(uQ, c) - S(uFwd, p + uDt * u));
         ivec3 b = ivec3(floor(p - uDt * u - 0.5));
         vec4 mn = vec4(1e9), mx = vec4(-1e9);
@@ -1262,10 +1299,15 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
              B = F(uVel, c - EZ).xyz, T = F(uVel, c + EZ).xyz;
         vec3 w = 0.5 * vec3((U.z - D.z) - (T.y - B.y), (T.x - B.x) - (R.z - L.z), (R.y - L.y) - (U.x - D.x));
         o = vec4(w, length(w)); }`,
-    force: `uniform sampler2D uVel, uSc, uVort; uniform float uDt, uAlpha, uBeta, uEps;
+    force: `uniform sampler2D uVel, uSc, uVort; uniform float uDt, uAlpha, uBeta, uEps, uPush, uDamp, uDampZ;
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
         vec4 s = F(uSc, c);
         vec3 f = vec3(0.0, 0.0, -uAlpha * s.x + uBeta * s.y);
+        // 呼吸：煙のある所だけ水平に外へ押す（押した分は周りの流れが戻り、渦の輪になる）
+        vec2 r = vec2(c.xy) + 0.5 - 0.5 * uN; float rl = length(r) + 1e-3;
+        f.xy += uPush * min(s.x, 1.0) * r / rl * (1.0 - smoothstep(0.55, 0.85, rl / (0.5 * uN)));
+        vec3 u0 = F(uVel, c).xyz;
+        f -= uDamp * u0 + vec3(0.0, 0.0, uDampZ * u0.z);
         vec3 eta = 0.5 * vec3(F(uVort, c + EX).w - F(uVort, c - EX).w, F(uVort, c + EY).w - F(uVort, c - EY).w,
                               F(uVort, c + EZ).w - F(uVort, c - EZ).w);
         float l = length(eta);
@@ -1301,6 +1343,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
         vec4 n = F(uX, c + EX) + F(uX, c - EX) + F(uX, c + EY) + F(uX, c - EY) + F(uX, c + EZ) + F(uX, c - EZ);
         o = (F(uB, c) + uA * n) / (1.0 + 6.0 * uA); }`,
+    blur: `uniform sampler2D uQ;
+      void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
+        o = (2.0 * F(uQ, c) + F(uQ, c + EX) + F(uQ, c - EX) + F(uQ, c + EY) + F(uQ, c - EY) + F(uQ, c + EZ) + F(uQ, c - EZ)) / 8.0; }`,
     // 対称化：f_sym(x) = (1/|G|) Σ g⁻¹ f(g x)。速度はベクトルとして戻す。元の場と uStr で補間
     sym: `uniform sampler2D uQ; uniform int uVec, uNs, uMir; uniform float uStr;
       void main() { ivec3 c = cellOf(); if (c.z >= uNi) { o = vec4(0.0); return; }
@@ -1337,6 +1382,8 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       return mix(texture(t, (o0 + p.xy) / uAtlas), texture(t, (o1 + p.xy) / uAtlas), f);
     }
     vec4 smp(vec3 wp) { return S(uSc, (wp - uMin) / uSize * uN); }
+    // 薄い煙ほど透明に（形が霞に埋もれないように）
+    float dn(float x) { return x * smoothstep(0.03, 0.35, x); }
     bool outside(vec3 p) { return any(lessThan(p, uMin)) || any(greaterThan(p, uMin + uSize)); }
     float hash(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
     float hg(float c, float g) { float d = 1.0 + g * g - 2.0 * g * c; return (1.0 - g * g) / (4.0 * 3.14159265 * d * sqrt(d)); }
@@ -1360,7 +1407,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
         if (i >= uSteps || t > t1) break;
         vec3 p = ro + rd * t;
         vec4 s = smp(p);
-        float d = s.x;
+        float d = dn(s.x);
         if (d > 0.003) {
           vec3 col = uCol;
           if (uTemp > 0.0) col = mix(col, vec3(1.0, 0.42, 0.12), clamp(s.y * uTemp, 0.0, 0.75));   // 温度でわずかに色づく
@@ -1370,7 +1417,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
             if (j >= uShSteps) break;
             vec3 lp = p + uLight * sdt * (float(j) + jit);
             if (outside(lp)) break;
-            tau += smp(lp).x;
+            tau += dn(smp(lp).x);
           }
           vec3 Tl = exp(-tau * sdt * ext);
           vec3 Sc = col * (lightC * Tl * ph + amb);
@@ -1385,7 +1432,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     }`;
 
   const SMK = { ok: false, fmt: null, N: 0, tx: 0, W: 0, t: {}, fb: {}, P: {}, U: new Map(), dirTex: null,
-                playing: true, needReset: true, srcDirty: true, lvl: 0, accDt: 0, accN: 0, splat: null, steps: 0, fps: 0 };
+                playing: true, needReset: true, srcDirty: true, beats: 0, dtEff: 1, phase: null, lvl: 0, accDt: 0, accN: 0, splat: null, steps: 0, fps: 0 };
   (function smokeInit() {
     if (!volRenderOK) return;
     try {
@@ -1419,7 +1466,7 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     SMK.t = {}; SMK.fb = {};
     const tx = Math.ceil(Math.sqrt(N)), W = tx * N;
     let fmt = N <= 64 && SMK.fmt32 ? SMK.fmt32 : (SMK.fmt16 || SMK.fmt32);
-    const names = ["vel0", "vel1", "velT", "sc0", "sc1", "scT", "p0", "p1", "div", "vort", "src"];
+    const names = ["vel0", "vel1", "velT", "sc0", "sc1", "scT", "p0", "p1", "div", "vort", "src", "tgt", "tgtT"];
     for (let attempt = 0; attempt < 2; attempt++) {
       let okAll = true;
       for (const n of names) {
@@ -1473,20 +1520,39 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       gl.uniform1f(U("uH"), Math.max(view.height, 0.05)); gl.uniform1f(U("uVB"), VB); gl.uniform1f(U("uVW"), VW);
       gl.uniform1f(U("uCell"), cell); gl.uniform3f(U("uMin"), -SMK_HALF, -SMK_HALF, SMK_Z0);
     });
+    // 形へ向かう向きを遠くからでも決められるよう、発生源を大きくぼかした場（勾配が形を指す）
+    smkPass("blur", "tgt", { uQ: "src" });
+    for (let i = 0; i < 48; i++) { smkPass("blur", "tgtT", { uQ: "tgt" }); swap("tgt", "tgtT"); }
     SMK.srcDirty = false; SMK.srcH = view.height;
   }
 
   function smkReset() {
     for (const n of ["vel0", "vel1", "velT", "p0", "p1", "sc1", "scT"]) smkPass("clear", n);
     // 解放モードはアトラクタそのものを初期の煙として置く。他のモードでも形が見えるよう少し置いておく
-    const amt = sm.source === "release" ? 2.2 : 0.6;
+    const amt = sm.source === "release" || sm.source === "breath" ? 2.2 : 0.6;
     smkPass("init", "sc0", { uSrc: "src" }, U => { gl.uniform1f(U("uA"), amt); gl.uniform1f(U("uAT"), amt * 0.6); });
-    SMK.needReset = false; SMK.steps = 0;
+    SMK.needReset = false; SMK.steps = 0; SMK.beats = 0;
+  }
+
+  // 呼吸の局面：秩序（形）→ 拡散（横へ広がる）→ 混沌 → 収束（形へ戻る）→ 秩序。テンポの小節に同期
+  const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function breathPhase() {
+    const t = (SMK.beats / (sm.bars * 4)) % 1;
+    return {
+      t,
+      out: sstep(0.08, 0.16, t) * (1 - sstep(0.4, 0.52, t)),
+      chaos: sstep(0.1, 0.3, t) * (1 - sstep(0.6, 0.72, t)),
+      gather: sstep(0.56, 0.64, t) * (1 - sstep(0.96, 1, t)),
+      relax: 0.003 + 0.1 * sstep(0.78, 0.96, t) + 0.06 * (1 - sstep(0.02, 0.1, t)),
+      name: t < 0.08 || t >= 0.96 ? "秩序" : t < 0.42 ? "拡散" : t < 0.58 ? "混沌" : "収束",
+    };
   }
 
   function smkStep() {
-    const dt = sm.dt, open = $("smkOpen").checked ? 1 : 0;
-    const emit = sm.source === "release" ? 0 : sm.emit;
+    const dt = SMK.dtEff, open = $("smkOpen").checked ? 1 : 0;
+    const breath = sm.source === "breath", ph = breath ? breathPhase() : null;
+    SMK.phase = ph;
+    const emit = sm.source === "release" || breath ? 0 : sm.emit;
     const sp = SMK.splat; SMK.splat = null;
     const splat = U => {
       gl.uniform4f(U("uSplat"), sp ? sp.pos[0] : 0, sp ? sp.pos[1] : 0, sp ? sp.pos[2] : 0, sp ? 1 : 0);
@@ -1496,28 +1562,37 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     // 1. 注入
     smkPass("injS", "sc1", { uSc: "sc0", uSrc: "src" }, U => {
       gl.uniform1f(U("uRate"), 0.02 * emit); gl.uniform1f(U("uRateT"), 0.03 * emit); gl.uniform1f(U("uDt"), dt); splat(U);
+      gl.uniform1f(U("uRelax"), breath ? ph.relax : 0); gl.uniform1f(U("uTarget"), 2.2);
     }); swap("sc0", "sc1");
     smkPass("injV", "vel1", { uVel: "vel0", uSrc: "src", uSc: "sc0" }, U => {
       gl.uniform1f(U("uSpeed"), sm.source === "filament" ? 0.35 * emit : 0); gl.uniform1f(U("uDt"), dt); splat(U);
-      gl.uniform1f(U("uTurb"), sm.turb); gl.uniform1f(U("uTime"), SMK.steps * dt * 0.05);
+      gl.uniform1f(U("uTurb"), sm.turb * (breath ? 0.25 + ph.chaos : 1)); gl.uniform1f(U("uTime"), SMK.steps * 0.05);
     }); swap("vel0", "vel1");
     // 2. 速度の自己移流
-    smkPass("adv1", "velT", { uVel: "vel0", uQ: "vel0" }, U => gl.uniform1f(U("uDt"), dt));
-    smkPass("adv2", "vel1", { uVel: "vel0", uQ: "vel0", uFwd: "velT" }, U => { gl.uniform1f(U("uDt"), dt); gl.uniform4f(U("uDecay"), 1, 1, 1, 1); });
+    const noExtra = U => { gl.uniform1f(U("uOut"), 0); gl.uniform1f(U("uGather"), 0); };
+    smkPass("adv1", "velT", { uVel: "vel0", uQ: "vel0" }, U => { gl.uniform1f(U("uDt"), dt); noExtra(U); });
+    smkPass("adv2", "vel1", { uVel: "vel0", uQ: "vel0", uFwd: "velT" }, U => { gl.uniform1f(U("uDt"), dt); gl.uniform4f(U("uDecay"), 1, 1, 1, 1); noExtra(U); });
     swap("vel0", "vel1");
     // 3, 4. 浮力 + 渦度閉じ込め
     smkPass("vort", "vort", { uVel: "vel0" });
     smkPass("force", "vel1", { uVel: "vel0", uSc: "sc0", uVort: "vort" }, U => {
-      gl.uniform1f(U("uDt"), dt); gl.uniform1f(U("uAlpha"), sm.alpha); gl.uniform1f(U("uBeta"), sm.beta); gl.uniform1f(U("uEps"), sm.vort);
+      gl.uniform1f(U("uDt"), dt); gl.uniform1f(U("uAlpha"), breath ? 0 : sm.alpha); gl.uniform1f(U("uBeta"), breath ? 0 : sm.beta);
+      gl.uniform1f(U("uEps"), sm.vort * (breath ? 0.4 + ph.chaos : 1));
+      gl.uniform1f(U("uPush"), breath ? 0.012 * sm.spread * ph.out : 0);
+      gl.uniform1f(U("uDamp"), breath ? 0.06 * ph.gather : 0); gl.uniform1f(U("uDampZ"), breath ? 0.08 : 0);
     }); swap("vel0", "vel1");
     // 5. 非圧縮化
     smkPass("div", "div", { uVel: "vel0" }, U => gl.uniform1i(U("uOpen"), open));
     for (let i = 0; i < SMK.jacobi; i++) { smkPass("jacobi", "p1", { uP: "p0", uDiv: "div" }, U => gl.uniform1i(U("uOpen"), open)); swap("p0", "p1"); }
     smkPass("grad", "vel1", { uVel: "vel0", uP: "p0" }, U => gl.uniform1i(U("uOpen"), open)); swap("vel0", "vel1");
     // 6. ρ, T の移流・拡散・減衰（T は少し早く冷める）
-    smkPass("adv1", "scT", { uVel: "vel0", uQ: "sc0" }, U => gl.uniform1f(U("uDt"), dt));
-    smkPass("adv2", "sc1", { uVel: "vel0", uQ: "sc0", uFwd: "scT" }, U => {
-      gl.uniform1f(U("uDt"), dt); const d = Math.pow(sm.decay, dt); gl.uniform4f(U("uDecay"), d, Math.pow(sm.decay * 0.985, dt), 1, 1);
+    const scExtra = U => {
+      gl.uniform1f(U("uOut"), breath ? 0.06 * sm.spread * ph.out : 0); gl.uniform1f(U("uGather"), breath ? 0.4 * ph.gather : 0);
+    };
+    smkPass("adv1", "scT", { uVel: "vel0", uQ: "sc0", uTgt: "tgt", uSrcX: "src" }, U => { gl.uniform1f(U("uDt"), dt); scExtra(U); });
+    smkPass("adv2", "sc1", { uVel: "vel0", uQ: "sc0", uFwd: "scT", uTgt: "tgt", uSrcX: "src" }, U => {
+      gl.uniform1f(U("uDt"), dt); scExtra(U);
+      const dc = breath ? 0.9995 : sm.decay, d = Math.pow(dc, dt); gl.uniform4f(U("uDecay"), d, Math.pow(dc * 0.985, dt), 1, 1);
     }); swap("sc0", "sc1");
     if (sm.kappa > 0) {
       // b = sc0、反復は sc1 / scT を交互に
@@ -1597,9 +1672,12 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
       }
     } else SMK.lvl = 0;
     SMK.jacobi = Math.min(Math.round(sm.jacobi), SMK_Q[SMK.lvl].jac);
-    if (SMK.playing) smkStep();
+    // 時間刻みは実際のフレーム時間に合わせる（30fps で 1 倍）。呼吸の周期は端末の速さによらない
+    SMK.dtEff = Math.min(2, Math.max(0.1, sm.dt * motion.dt * 30));
+    if (SMK.playing) { SMK.beats += motion.dt * sm.dt * motion.bpm / 60; smkStep(); }
     smkRender(SMK_Q[SMK.lvl].scale * (dragging && !$("smkStir").checked ? 0.6 : 1));
-    statusEl.textContent = `煙 ${SMK.N}³ ${SMK.fmtName}  ${SMK.fps ? SMK.fps.toFixed(0) + "fps" : ""}  ${SMK.playing ? "" : "一時停止"}`;
+    const ph = SMK.phase ? `  ${SMK.phase.name} ${Math.round(SMK.phase.t * 100)}%` : "";
+    statusEl.textContent = `煙 ${SMK.N}³ ${SMK.fmtName}  ${SMK.fps ? SMK.fps.toFixed(0) + "fps" : ""}${ph}  ${SMK.playing ? "" : "一時停止"}`;
   }
 
   // かき混ぜ：ドラッグを速度の衝撃に変える（回転の代わりに）
@@ -1766,8 +1844,10 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
   slider($("isoExposure"), "露出", 0.3, 3, 0.01, 2, () => vs.exposure, vset("exposure"));
 
   // 煙の設定
-  const sm = { sym: 0.5, turb: 0.4, alpha: 0.05, beta: 0.6, vort: 1.0, kappa: 0, decay: 0.985, emit: 1, dt: 1, jacobi: 24, dens: 1, source: "emit" };
+  const sm = { bars: 8, spread: 1, sym: 0.5, turb: 0.4, alpha: 0.05, beta: 0.6, vort: 1.0, kappa: 0, decay: 0.985, emit: 1, dt: 1, jacobi: 24, dens: 1, source: "breath" };
   slider($("smkSym"), "対称性の保持", 0, 1, 0.01, 2, () => sm.sym, v => { sm.sym = v; });
+  slider($("smkBreath"), "周期（小節）", 2, 32, 1, 0, () => sm.bars, v => { sm.bars = v; });
+  slider($("smkBreath"), "広がり", 0.2, 3, 0.01, 2, () => sm.spread, v => { sm.spread = v; });
   slider($("smkLookSliders"), "濃さ", 0.2, 3, 0.01, 2, () => sm.dens, v => { sm.dens = v; });
   for (const [k, label, lo, hi, st, dg] of [["alpha", "浮力 α 重さ", 0, 0.5, 0.005, 3], ["beta", "浮力 β 熱", 0, 2, 0.01, 2],
       ["vort", "渦度", 0, 2, 0.01, 2], ["turb", "乱れ", 0, 1.5, 0.01, 2], ["kappa", "拡散 κ", 0, 0.3, 0.005, 3], ["decay", "減衰", 0.95, 1, 0.001, 3],
@@ -1775,7 +1855,9 @@ footer { margin-top: 64px; color: var(--muted); font-size: 14px; }
     slider($("smkSliders"), label, lo, hi, st, dg, () => sm[k], v => { sm[k] = v; });
   $("smkPlay").addEventListener("click", () => { SMK.playing = !SMK.playing; $("smkPlay").textContent = SMK.playing ? "一時停止" : "再生"; });
   $("smkReset").addEventListener("click", () => { SMK.needReset = true; });
-  $("smkSource").addEventListener("change", e => { sm.source = e.target.value; SMK.needReset = true; });
+  $("smkSource").addEventListener("change", e => {
+    sm.source = e.target.value; SMK.needReset = true; $("smkBreath").hidden = sm.source !== "breath";
+  });
   $("smkLook").addEventListener("change", e => { $("smkCol").value = LOOKS[e.target.value].col; });
   if (!SMK.ok) for (const o of $("renderMode").options) if (o.value === "smoke") { o.disabled = true; o.text += "（この環境では使えません）"; }
 
