@@ -2,6 +2,14 @@
 
 **🌐 Web ページ: https://york-14.github.io/Generative-flower-Order-Chaos/**
 
+| ページ | URL |
+|---|---|
+| 2D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/ |
+| 2D 版 ver.2（3 × 3） | https://york-14.github.io/Generative-flower-Order-Chaos/2d-v2.html |
+| 3D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/3d.html |
+| 3D 版 ver.2 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v2.html |
+| 3D 版 ver.3 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v3.html |
+
 対称カオス写像（*symmetric icons*）が描く「花」のような図形を大量に探索し、
 
 1. **形の地図** — 回転・鏡映に不変な形状特徴を 2 次元に埋め込み（UMAP / t-SNE）、HDBSCAN でクラスタに分ける
@@ -204,6 +212,7 @@ python shape_map.py --run out/run1 --out my_map    # 出力先を指定
 | 色彩（9 つ共通） | パレット・色相・ガンマ・露出・背景は全体で 1 つ。「色を抽選」で系統ごと変更、探索のたびに変えることも可 |
 | 花の選択と調整 | 画面上の花をクリック（または矢印キー）で選び、パラメータを編集。選択枠は初期設定で非表示（「選択枠を表示」でオン）。画像には含まれない |
 | ロック・再抽選・変奏 | ロックした花は再探索・変奏で置き換えない。選んだ花だけの再抽選、選んだ花の近傍パラメータで残りを埋める変奏も可 |
+| シード | 乱数はシード付き（mulberry32）。花 i はシードから派生した系列 i、色は系列 9 を使うので、探索の順番によらず同じシードから同じ 9 つが再現される。シードは画面左下に小さく表示され（PNG には含まれない）、入力欄または URL の `?seed=番号` で指定できる（文字列もハッシュしてシードにする）。再抽選・変奏・編集でシードの結果から変わると `*` が付く。色は「探索のたびに色の系統も変える」がオンのときだけシードから決まる |
 | 保存 | 一枚の PNG（1440 × 1440）で保存。状態は localStorage に保存され、再読み込みしても残る |
 
 ### 3D 版 ver.3（`docs/3d-v3.html`）
