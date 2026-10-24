@@ -206,12 +206,6 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   }
   const dateSeed = d => Number(`${d.getFullYear()}${[d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]
     .map(v => String(v).padStart(2, "0")).join("")}`);
-  // YYYYMMDDHHmm として有効な日付なら "YYYY-MM-DD HH:mm"、そうでなければ null（年は 1000〜9999）
-  function seedDate(s) {
-    const t = pad12(s), Y = +t.slice(0, 4), M = +t.slice(4, 6), D = +t.slice(6, 8), h = +t.slice(8, 10), m = +t.slice(10, 12);
-    if (Y < 1000 || M < 1 || M > 12 || D < 1 || D > new Date(Y, M, 0).getDate() || h > 23 || m > 59) return null;
-    return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)} ${t.slice(8, 10)}:${t.slice(10, 12)}`;
-  }
   const rnd = (rng, lo, hi) => lo + rng() * (hi - lo);
   const pick = (rng, a) => a[Math.floor(rng() * a.length)];
   const clip = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -477,8 +471,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     edited = true; showSeed(); save();
   }
   function showSeed() {
-    const date = seed === null ? null : seedDate(seed);
-    $("seed").textContent = seed === null ? "" : `seed ${pad12(seed)}${date ? `（${date}）` : ""}${edited ? " *" : ""}`;
+    $("seed").textContent = seed === null ? "" : `seed ${pad12(seed)}${edited ? " *" : ""}`;
     $("seedIn").placeholder = seed === null ? "12 桁のシード" : pad12(seed);
     try {
       const url = new URL(location.href);
