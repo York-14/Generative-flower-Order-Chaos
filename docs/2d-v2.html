@@ -78,6 +78,23 @@ a { color: var(--accent); }
 #swatch { height: 12px; border-radius: 6px; margin-top: 10px; border: 1px solid var(--border); }
 .hint { font-size: 13px; color: var(--muted); }
 footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
+/* タッチ端末の保存用：画像をページ内に出し、長押しか共有シートで保存する */
+.saver {
+  position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, .72);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.saver-box {
+  width: min(560px, 100%); max-height: 100%; overflow: auto; background: var(--surface); color: var(--text);
+  border-radius: 14px; padding: 14px; text-align: center;
+}
+.saver-box img { width: 100%; height: auto; display: block; border-radius: 8px; -webkit-touch-callout: default; }
+.saver-box p { font-size: 14px; color: var(--muted); margin: 10px 0 4px; }
+.saver-btns { display: flex; gap: 8px; margin-top: 8px; }
+.saver-btns button {
+  flex: 1; font: inherit; font-size: 15px; padding: 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.saver-btns button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -144,6 +161,17 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 
   <footer>Source: <a href="https://github.com/York-14/Generative-flower-Order-Chaos">github.com/York-14/Generative-flower-Order-Chaos</a></footer>
 </main>
+
+<div class="saver" id="saver" role="dialog" aria-modal="true" aria-label="画像を保存" hidden>
+  <div class="saver-box">
+    <img id="saverImg" alt="保存する画像">
+    <p>画像を長押しして「"写真"に保存」を選ぶと、写真に保存できます。</p>
+    <div class="saver-btns">
+      <button id="saverShare" class="primary" hidden>共有・保存</button>
+      <button id="saverClose">閉じる</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -604,9 +632,31 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     sel.locked = !sel.locked; sel.lk.hidden = !sel.locked;
     syncPanel(); save();
   });
+  // 保存：パソコンは Blob URL でダウンロード。タッチ端末（iPhone の Safari は data: URL の保存も表示もできない）は
+  // ページ内に画像を出し、長押しか共有シートで保存する
+  const touch = matchMedia("(pointer: coarse)").matches;
+  let saveFile = null, saveUrl = null;
   $("saveAll").addEventListener("click", () => {
-    const a = document.createElement("a"); a.download = `flowers_3x3${seed !== null ? `_seed${pad12(seed)}${edited ? "_edited" : ""}` : ""}.png`; a.href = canvas.toDataURL(); a.click();
+    const name = `flowers_3x3${seed !== null ? `_seed${pad12(seed)}${edited ? "_edited" : ""}` : ""}.png`;
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      if (saveUrl) URL.revokeObjectURL(saveUrl);
+      saveUrl = URL.createObjectURL(blob);
+      if (!touch) {
+        const a = document.createElement("a"); a.download = name; a.href = saveUrl; a.click();
+        return;
+      }
+      saveFile = new File([blob], name, { type: "image/png" });
+      $("saverImg").src = saveUrl;
+      $("saverShare").hidden = !(navigator.canShare && navigator.canShare({ files: [saveFile] }));
+      $("saver").hidden = false;
+    }, "image/png");
   });
+  $("saverShare").addEventListener("click", () => { if (saveFile) navigator.share({ files: [saveFile] }).catch(() => {}); });
+  const closeSaver = () => { $("saver").hidden = true; };
+  $("saverClose").addEventListener("click", closeSaver);
+  $("saver").addEventListener("click", e => { if (e.target === $("saver")) closeSaver(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("saver").hidden) closeSaver(); });
 
   // 起動：URL の ?seed= を最優先。次に保存済みの花、どちらもなければ新しいシードで生成
   syncColor(); buildLUT(); $("customColors").hidden = color.palette !== "custom"; showSel();
