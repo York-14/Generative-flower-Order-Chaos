@@ -636,10 +636,42 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   // ページ内に画像を出し、長押しか共有シートで保存する
   const touch = matchMedia("(pointer: coarse)").matches;
   let saveFile = null, saveUrl = null;
+  // 画面左下と同じシード表示を画像にも描き込む
+  function withSeedLabel() {
+    const label = $("seed").textContent;
+    if (!label) return canvas;
+    const out = Object.assign(document.createElement("canvas"), { width: S, height: S }), c = out.getContext("2d");
+    c.drawImage(canvas, 0, 0);
+    c.font = `${Math.round(S * 0.013)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    if ("letterSpacing" in c) c.letterSpacing = `${(S * 0.0004).toFixed(1)}px`;
+    c.fillStyle = $("seed").style.color || "rgba(255, 255, 255, .32)";
+    c.fillText(label, Math.round(S * 0.012), Math.round(S * 0.99));
+    return out;
+  }
+  // PNG の tEXt チャンク（Latin-1 のみ）にシードを書き込む（IHDR の直後に挿入）
+  const CRC = new Int32Array(256).map((_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xEDB88320 ^ n >>> 1 : n >>> 1; return n; });
+  function pngText(buf, entries) {
+    const src = new Uint8Array(buf), parts = [src.subarray(0, 33)];
+    for (const [key, val] of entries) {
+      const data = new TextEncoder().encode(`${key}\0${val}`), ch = new Uint8Array(12 + data.length), dv = new DataView(ch.buffer);
+      dv.setUint32(0, data.length); ch.set([116, 69, 88, 116], 4); ch.set(data, 8);   // "tEXt"
+      let crc = -1;
+      for (let i = 4; i < 8 + data.length; i++) crc = CRC[(crc ^ ch[i]) & 255] ^ crc >>> 8;
+      dv.setUint32(8 + data.length, (crc ^ -1) >>> 0);
+      parts.push(ch);
+    }
+    parts.push(src.subarray(33));
+    return new Blob(parts, { type: "image/png" });
+  }
   $("saveAll").addEventListener("click", () => {
     const name = `flowers_3x3${seed !== null ? `_seed${pad12(seed)}${edited ? "_edited" : ""}` : ""}.png`;
-    canvas.toBlob(blob => {
-      if (!blob) return;
+    withSeedLabel().toBlob(async png => {
+      if (!png) return;
+      const blob = seed === null ? png : pngText(await png.arrayBuffer(), [
+        ["Title", "Generative Flower - 2D ver.2"],
+        ["Seed", pad12(seed) + (edited ? " (edited)" : "")],
+        ["Source", seed !== null && !edited ? `https://york-14.github.io/Generative-flower-Order-Chaos/2d-v2.html?seed=${pad12(seed)}` : ""],
+      ].filter(([, v]) => v));
       if (saveUrl) URL.revokeObjectURL(saveUrl);
       saveUrl = URL.createObjectURL(blob);
       if (!touch) {
