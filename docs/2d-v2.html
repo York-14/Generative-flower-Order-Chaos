@@ -43,7 +43,7 @@ a { color: var(--accent); }
   position: absolute; width: calc(100% / 3); height: calc(100% / 3); pointer-events: none;
   border: 1.5px dashed transparent; border-radius: 8px; transition: border-color .15s;
 }
-.canvas-wrap:hover .mark.sel, .canvas-wrap:focus-visible .mark.sel, .show-sel .mark.sel { border-color: var(--accent); }
+.show-sel .mark.sel { border-color: var(--accent); }
 .mark .lock {
   position: absolute; right: 6px; top: 4px; font-size: 11px; padding: 0 6px; border-radius: 6px;
   background: rgba(0, 0, 0, .5); color: #fff;
@@ -103,7 +103,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
         <button id="lock">ロック</button>
       </div>
       <div id="sliders"></div>
-      <label class="check"><input type="checkbox" id="showSel" checked> 選択枠を表示</label>
+      <label class="check"><input type="checkbox" id="showSel"> 選択枠を表示</label>
 
       <h4>色彩（9 つ共通）</h4>
       <select id="palette" aria-label="パレット"></select>
