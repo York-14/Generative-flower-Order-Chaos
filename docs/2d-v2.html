@@ -99,9 +99,11 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
       <button id="rollAll" class="primary">9 つをランダム探索</button>
       <button id="variations">選んだ花の変奏で埋める</button>
       <div class="seedrow">
-        <input type="text" id="seedIn" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="シード" aria-label="シード">
+        <input type="text" id="seedIn" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="12 桁のシード" aria-label="シード（12 桁）">
         <button id="seedGo">このシードで生成</button>
       </div>
+      <p class="hint" id="seedErr" role="alert" style="margin:4px 0 0;color:var(--accent)" hidden></p>
+      <button id="seedNow">今の日時で生成</button>
       <label class="check"><input type="checkbox" id="rollColor"> 探索のたびに色の系統も変える</label>
       <div id="layoutSliders"></div>
       <button id="saveAll">PNG で保存</button>
@@ -135,7 +137,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   <p class="hint">ランダム探索は、発散せず、ボックス次元・余白が中庸で、最大 Lyapunov 指数が正（カオス）の候補だけを採用します（2D 版 ver.1 の「ランダム探索」と同じ基準）。
   「花の大きさ」を 1 より大きくすると隣どうしが重なり、重なった部分はスクリーン合成で明るく混ざります。
   状態はこのブラウザ（localStorage）に保存され、再読み込みしても残ります。</p>
-  <p class="hint">乱数はシード付き（mulberry32）です。左下のシードを入力欄に入れるか、URL に <code>?seed=番号</code> を付けると、同じ 9 つの花を再現できます。
+  <p class="hint">シードは 12 桁の数（000000000000〜999999999999、全 10<sup>12</sup> 通り）で、日付 YYYYMMDDHHmm（例 202610241756）もそのまま使えます。
+  左下のシードを入力欄に入れるか、URL に <code>?seed=12桁の数</code> を付けると、同じ 9 つの花を再現できます。数字以外の文字列はハッシュして 12 桁に収めます。
+  乱数はシードを上位・下位の 32bit に分けて系列番号と混ぜ、128bit 状態の sfc32 を初期化するので、10<sup>12</sup> 通りのシードがすべて別の系列になります（花 i は系列 i、色は系列 9）。
   色は「探索のたびに色の系統も変える」がオンのときだけシードから決まります。再抽選・変奏・パラメータの編集・ロックした花の保持でシードの結果から変わったときは、シードの後ろに <code>*</code> が付きます。</p>
 
   <footer>Source: <a href="https://github.com/York-14/Generative-flower-Order-Chaos">github.com/York-14/Generative-flower-Order-Chaos</a></footer>
@@ -148,31 +152,65 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
-  // シード付き乱数（mulberry32）。シードから花ごと・色ごとに独立した系列を作るので、探索の順番に結果が左右されない
-  function mulberry32(a) {
+  // シード付き乱数。シードは 12 桁の整数 0 ≤ s < 10^12（日付 YYYYMMDDHHmm もそのまま使える）
+  // s を上位・下位の 32bit に分け、系列番号 k と混ぜて 128bit 状態の sfc32 を初期化する。
+  // 花 i は系列 i、色は系列 9。系列ごとに独立なので、探索の順番に結果が左右されない
+  const SEED_SPACE = 1e12;
+  const pad12 = s => String(s).padStart(12, "0");
+  function splitmix32(a) {
     return () => {
-      a = a + 0x6D2B79F5 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      a = a + 0x9E3779B9 | 0;
+      let z = a;
+      z = Math.imul(z ^ z >>> 16, 0x85EBCA6B); z = Math.imul(z ^ z >>> 13, 0xC2B2AE35);
+      return (z ^ z >>> 16) >>> 0;
     };
   }
-  function subSeed(seed, k) {                   // シードと系列番号を混ぜる
-    let h = Math.imul(seed ^ 0x9E3779B9, 0x85EBCA6B) ^ Math.imul(k + 1, 0xC2B2AE35);
-    h ^= h >>> 16; h = Math.imul(h, 0x7FEB352D); h ^= h >>> 15; h = Math.imul(h, 0x846CA68B); h ^= h >>> 16;
-    return h >>> 0;
+  // (hi, lo, k) → 4 ワード。k を固定すると (hi, lo) に対して単射（各 splitmix32 の初回出力が種に対して全単射のため）
+  function subSeed(hi, lo, k) {
+    const a = splitmix32(lo), b = splitmix32(Math.imul(hi, 0x9E3779B1) ^ 0x6A09E667),
+          c = splitmix32(Math.imul(k + 1, 0x85EBCA77) ^ 0xBB67AE85);
+    const a0 = a(), b0 = b(), c0 = c();
+    return [a0 ^ c0, b0 ^ a(), c0 ^ b(), a() ^ b() ^ c()].map(x => x >>> 0);
   }
-  const newSeed = () => {
-    try { return crypto.getRandomValues(new Uint32Array(1))[0]; } catch { return Math.floor(Math.random() * 4294967296); }
-  };
-  // 数字はそのまま、それ以外の文字列はハッシュ（FNV-1a）してシードにする
+  function sfc32(a, b, c, d) {
+    const next = () => {
+      const t = (a + b | 0) + d | 0;
+      d = d + 1 | 0; a = b ^ b >>> 9; b = c + (c << 3) | 0; c = (c << 21 | c >>> 11) + t | 0;
+      return (t >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < 12; i++) next();       // 初期状態の偏りを捨てる
+    return next;
+  }
+  const seedRng = (s, k) => sfc32(...subSeed(Math.floor(s / 4294967296), s % 4294967296, k));
+  // 64bit を棄却サンプリングして 0〜10^12−1 の一様乱数にする
+  function newSeed() {
+    const N = 1000000000000n, LIMIT = (1n << 64n) - (1n << 64n) % N, w = new Uint32Array(2);
+    for (;;) {
+      crypto.getRandomValues(w);
+      const v = BigInt(w[0]) << 32n | BigInt(w[1]);
+      if (v < LIMIT) return Number(v % N);
+    }
+  }
+  const freshRng = () => seedRng(newSeed(), 0);   // 再抽選・変奏・色の抽選など、シードに紐づかない乱数
+  // 1〜12 桁の数字はそのまま、13 桁以上はエラー、それ以外の文字列は 64bit FNV-1a で 10^12 に収める
   function parseSeed(str) {
-    str = String(str).trim();
+    str = String(str ?? "").trim();
     if (!str) return null;
-    if (/^\d+$/.test(str)) return Number(BigInt(str) % 4294967296n);
-    let h = 0x811C9DC5;
-    for (const ch of str) h = Math.imul(h ^ ch.codePointAt(0), 0x01000193);
-    return h >>> 0;
+    if (/^\d+$/.test(str)) {
+      if (str.length > 12) throw new RangeError("シードは 12 桁まで（000000000000〜999999999999）です");
+      return Number(str);
+    }
+    let h = 0xCBF29CE484222325n;
+    for (const b of new TextEncoder().encode(str)) h = (h ^ BigInt(b)) * 0x100000001B3n & 0xFFFFFFFFFFFFFFFFn;
+    return Number(h % 1000000000000n);
+  }
+  const dateSeed = d => Number(`${d.getFullYear()}${[d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]
+    .map(v => String(v).padStart(2, "0")).join("")}`);
+  // YYYYMMDDHHmm として有効な日付なら "YYYY-MM-DD HH:mm"、そうでなければ null（年は 1000〜9999）
+  function seedDate(s) {
+    const t = pad12(s), Y = +t.slice(0, 4), M = +t.slice(4, 6), D = +t.slice(6, 8), h = +t.slice(8, 10), m = +t.slice(10, 12);
+    if (Y < 1000 || M < 1 || M > 12 || D < 1 || D > new Date(Y, M, 0).getDate() || h > 23 || m > 59) return null;
+    return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)} ${t.slice(8, 10)}:${t.slice(10, 12)}`;
   }
   const rnd = (rng, lo, hi) => lo + rng() * (hi - lo);
   const pick = (rng, a) => a[Math.floor(rng() * a.length)];
@@ -324,11 +362,11 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   // 一枚のキャンバスに 9 つの花を描く
   // 花ごとにヒストグラムを持ち、合成時に花ごとに正規化 → スクリーン合成 → 共通の色で塗る
   // ==================================================================================
-  const SKEY = "gfoc.grid.v2";
+  const SKEY = "gfoc.grid.v2.seed12";        // 32bit シード時代の保存データ（gfoc.grid.v2）は読まない
   const saved = store.get(SKEY) || {};
   const color = { ...COLOR_DEFAULT, ...(saved.color || {}) };
   const layout = { size: 0.92, ...(saved.layout || {}) };
-  let seed = Number.isInteger(saved.seed) ? saved.seed : null, edited = !!saved.edited;
+  let seed = Number.isSafeInteger(saved.seed) && saved.seed >= 0 && saved.seed < SEED_SPACE ? saved.seed : null, edited = !!saved.edited;
 
   const canvas = $("cv"), S = canvas.width, CELL = S / 3, TOTAL = 2e6;
   const ctx = canvas.getContext("2d"), img = ctx.createImageData(S, S);
@@ -426,12 +464,12 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 
   // シードから 9 つを生成。花 i は系列 i、色は系列 9 を使う
   function generate(s) {
-    seed = s >>> 0;
+    seed = s;
     const list = unlocked();
     edited = list.length < 9;                   // ロックした花が残るならシードの結果とは異なる
-    if ($("rollColor").checked) { Object.assign(color, randomColor(mulberry32(subSeed(seed, 9)))); syncColor(); recolor(); }
+    if ($("rollColor").checked) { Object.assign(color, randomColor(seedRng(seed, 9))); syncColor(); recolor(); }
     showSeed(); save();
-    rollMany(list, f => { const rng = mulberry32(subSeed(seed, f.idx)); return () => randomParams(rng); });
+    rollMany(list, f => { const rng = seedRng(seed, f.idx); return () => randomParams(rng); });
   }
   // シードの結果から変えたとき（再抽選・変奏・編集）
   function markEdited() {
@@ -439,11 +477,12 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     edited = true; showSeed(); save();
   }
   function showSeed() {
-    $("seed").textContent = seed === null ? "" : `seed ${seed}${edited ? " *" : ""}`;
-    $("seedIn").placeholder = seed === null ? "シード" : String(seed);
+    const date = seed === null ? null : seedDate(seed);
+    $("seed").textContent = seed === null ? "" : `seed ${pad12(seed)}${date ? `（${date}）` : ""}${edited ? " *" : ""}`;
+    $("seedIn").placeholder = seed === null ? "12 桁のシード" : pad12(seed);
     try {
       const url = new URL(location.href);
-      if (seed !== null && !edited) url.searchParams.set("seed", seed); else url.searchParams.delete("seed");
+      if (seed !== null && !edited) url.searchParams.set("seed", pad12(seed)); else url.searchParams.delete("seed");
       history.replaceState(null, "", url);
     } catch {}
   }
@@ -533,17 +572,21 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   }
   palSel.addEventListener("change", () => { color.palette = palSel.value; recolor(); });
   for (const k of ["c1", "c2", "c3", "bg"]) $(k).addEventListener("input", e => { color[k] = e.target.value; recolor(); });
-  $("randColor").addEventListener("click", () => { Object.assign(color, randomColor(mulberry32(newSeed()))); syncColor(); recolor(); });
+  $("randColor").addEventListener("click", () => { Object.assign(color, randomColor(freshRng())); syncColor(); recolor(); });
   $("resetColor").addEventListener("click", () => { Object.assign(color, COLOR_DEFAULT); syncColor(); recolor(); });
 
   // 操作
   const unlocked = () => flowers.filter(f => !f.locked);
   $("rollAll").addEventListener("click", () => generate(newSeed()));
+  const seedError = msg => { $("seedErr").textContent = msg || ""; $("seedErr").hidden = !msg; };
   const seedFromInput = () => {
-    const s = parseSeed($("seedIn").value);
+    let s;
+    try { s = parseSeed($("seedIn").value); } catch (e) { seedError(e.message); $("seedIn").focus(); return; }
     if (s === null) { $("seedIn").focus(); return; }
-    $("seedIn").value = ""; generate(s);
+    seedError(); $("seedIn").value = ""; generate(s);
   };
+  $("seedIn").addEventListener("input", () => seedError());
+  $("seedNow").addEventListener("click", () => { seedError(); generate(dateSeed(new Date())); });
   $("seedGo").addEventListener("click", seedFromInput);
   $("seedIn").addEventListener("keydown", e => { if (e.key === "Enter") seedFromInput(); });
   $("variations").addEventListener("click", () => {
@@ -551,16 +594,16 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     const base = sel.q, list = unlocked().filter(f => f !== sel);
     // 花ごとに変化の大きさを変えて、近いものから遠いものまで並べる
     if (!list.length) return;
-    const rng = mulberry32(newSeed());
+    const base0 = newSeed();
     markEdited();
     rollMany(list, f => {
-      const r = mulberry32(Math.floor(rng() * 4294967296)), sc = 0.5 + 1.5 * list.indexOf(f) / Math.max(1, list.length - 1);
+      const r = seedRng(base0, f.idx), sc = 0.5 + 1.5 * list.indexOf(f) / Math.max(1, list.length - 1);
       return () => mutate(r, base, sc);
     });
   });
   $("rollOne").addEventListener("click", () => {
     if (!sel) return;
-    const rng = mulberry32(newSeed());
+    const rng = freshRng();
     markEdited(); roll(sel, () => randomParams(rng));
   });
   $("lock").addEventListener("click", () => {
@@ -569,12 +612,13 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     syncPanel(); save();
   });
   $("saveAll").addEventListener("click", () => {
-    const a = document.createElement("a"); a.download = `flowers_3x3${seed !== null ? `_seed${seed}${edited ? "_edited" : ""}` : ""}.png`; a.href = canvas.toDataURL(); a.click();
+    const a = document.createElement("a"); a.download = `flowers_3x3${seed !== null ? `_seed${pad12(seed)}${edited ? "_edited" : ""}` : ""}.png`; a.href = canvas.toDataURL(); a.click();
   });
 
   // 起動：URL の ?seed= を最優先。次に保存済みの花、どちらもなければ新しいシードで生成
   syncColor(); buildLUT(); $("customColors").hidden = color.palette !== "custom"; showSel();
-  const urlSeed = parseSeed(new URLSearchParams(location.search).get("seed") || "");
+  let urlSeed = null;
+  try { urlSeed = parseSeed(new URLSearchParams(location.search).get("seed")); } catch (e) { seedError(`URL の ${e.message}`); }
   const hasSaved = Array.isArray(saved.cells) && saved.cells.length === 9;
   if (hasSaved) {
     saved.cells.forEach((s, i) => {
