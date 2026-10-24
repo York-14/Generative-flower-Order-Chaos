@@ -2,6 +2,14 @@
 
 **🌐 Web ページ: https://york-14.github.io/Generative-flower-Order-Chaos/**
 
+| ページ | URL |
+|---|---|
+| 2D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/ |
+| 2D 版 ver.2（3 × 3） | https://york-14.github.io/Generative-flower-Order-Chaos/2d-v2.html |
+| 3D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/3d.html |
+| 3D 版 ver.2 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v2.html |
+| 3D 版 ver.3 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v3.html |
+
 対称カオス写像（*symmetric icons*）が描く「花」のような図形を大量に探索し、
 
 1. **形の地図** — 回転・鏡映に不変な形状特徴を 2 次元に埋め込み（UMAP / t-SNE）、HDBSCAN でクラスタに分ける
