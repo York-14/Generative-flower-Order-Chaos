@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generative Flower — 2D ver.2 (3 × 3)</title>
-<meta name="description" content="対称カオス写像が描く花を 3 × 3 のグリッドに 9 つ並べ、それぞれに異なるパラメータをランダムに適用する。">
+<meta name="description" content="対称カオス写像が描く花を、一枚のビジュアルの上に 3 × 3 で 9 つ配置し、それぞれに異なるパラメータをランダムに適用する。">
 <style>
 :root {
   --bg: #fbfaf7; --surface: #ffffff; --text: #1c1b22; --muted: #5d5a68;
@@ -32,28 +32,25 @@ h1 { font-size: clamp(1.6rem, 4.4vw, 2.3rem); line-height: 1.2; margin: 0 0 8px;
 a { color: var(--accent); }
 .studio { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
 @media (max-width: 820px) { .studio { grid-template-columns: 1fr; } }
-.grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; aspect-ratio: 1;
-  background: var(--border); padding: 6px; border-radius: 14px;
+.canvas-wrap { position: relative; background: #0b0b10; border-radius: 12px; overflow: hidden; aspect-ratio: 1; cursor: pointer; }
+.canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+#status {
+  position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: #9b98a8;
+  font-family: ui-monospace, monospace; text-shadow: 0 1px 2px #000; pointer-events: none;
 }
-.cell {
-  position: relative; background: #0b0b10; border-radius: 8px; overflow: hidden; cursor: pointer;
-  outline: 3px solid transparent; outline-offset: -3px; transition: outline-color .15s;
+/* 選択枠・ロック表示は画像には含めず、上に重ねるだけ */
+.mark {
+  position: absolute; width: calc(100% / 3); height: calc(100% / 3); pointer-events: none;
+  border: 1.5px dashed transparent; border-radius: 8px; transition: border-color .15s;
 }
-.cell:hover { outline-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.cell.sel { outline-color: var(--accent); }
-.cell canvas { width: 100%; height: 100%; display: block; }
-.cell .tag {
-  position: absolute; left: 8px; top: 5px; font-size: 12px; font-weight: 700; color: #fff;
-  text-shadow: 0 1px 3px #000; pointer-events: none;
+.canvas-wrap:hover .mark.sel, .canvas-wrap:focus-visible .mark.sel, .show-sel .mark.sel { border-color: var(--accent); }
+.mark .lock {
+  position: absolute; right: 6px; top: 4px; font-size: 11px; padding: 0 6px; border-radius: 6px;
+  background: rgba(0, 0, 0, .5); color: #fff;
 }
-.cell .st {
-  position: absolute; left: 8px; bottom: 4px; font-size: 11px; color: #b5b2c2; text-shadow: 0 1px 2px #000;
-  font-family: ui-monospace, monospace; pointer-events: none;
-}
-.cell .lock {
-  position: absolute; right: 6px; top: 4px; font-size: 13px; padding: 0 6px; border-radius: 6px;
-  background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none;
+.mark .busy {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 12px; color: #b5b2c2;
+  text-shadow: 0 1px 2px #000; white-space: nowrap;
 }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 .panel h4 { margin: 16px 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
@@ -66,7 +63,6 @@ a { color: var(--accent); }
   border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
 }
 .panel button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.panel button:disabled { opacity: .5; cursor: default; }
 .panel .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .panel .check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 10px; }
 .panel .check input { accent-color: var(--accent); }
@@ -81,20 +77,25 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
 <body>
 <main>
   <h1>Generative Flower — 2D ver.2</h1>
-  <p class="lead">対称カオス写像 z<sub>t+1</sub> = ( λ + α|z|² + β Re(z<sup>n</sup>) + iω ) z + γ z̄<sup>n−1</sup> の花を
-  3 × 3 に並べ、9 つそれぞれに異なるパラメータをランダムに与えます。
-  セルをクリックすると、その花のパラメータと色を右のパネルで調整できます。
+  <p class="lead">対称カオス写像 z<sub>t+1</sub> = ( λ + α|z|² + β Re(z<sup>n</sup>) + iω ) z + γ z̄<sup>n−1</sup> の花を、
+  一枚のビジュアルの上に 3 × 3 で 9 つ配置します。9 つの花にはそれぞれ異なるパラメータをランダムに与え、色は全体で同じ系統にそろえます。
+  花をクリックすると、その花のパラメータを右のパネルで調整できます。
   <a href="index.html">← 2D 版（ver.1）へ</a></p>
 
   <div class="studio">
-    <div class="grid" id="grid"></div>
+    <div class="canvas-wrap" id="wrap" tabindex="0" role="button" aria-label="花を選ぶ">
+      <canvas id="cv" width="1440" height="1440"></canvas>
+      <div id="marks"></div>
+      <div id="status"></div>
+    </div>
     <div class="panel">
-      <h4>グリッド</h4>
+      <h4>全体</h4>
       <button id="rollAll" class="primary">9 つをランダム探索</button>
       <button id="variations">選んだ花の変奏で埋める</button>
-      <label class="check"><input type="checkbox" id="randColor" checked> 色もセルごとにランダムにする</label>
-      <button id="saveGrid">グリッドを PNG で保存</button>
-      <p class="hint" style="margin:8px 0 0">ロックしたセルは再探索・変奏で置き換えません。</p>
+      <label class="check"><input type="checkbox" id="rollColor"> 探索のたびに色の系統も変える</label>
+      <div id="layoutSliders"></div>
+      <button id="saveAll">PNG で保存</button>
+      <p class="hint" style="margin:8px 0 0">ロックした花は再探索・変奏で置き換えません。</p>
 
       <h4 id="selTitle">選択中の花</h4>
       <div class="row">
@@ -102,9 +103,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
         <button id="lock">ロック</button>
       </div>
       <div id="sliders"></div>
+      <label class="check"><input type="checkbox" id="showSel" checked> 選択枠を表示</label>
 
-      <h4>色彩</h4>
-      <label class="check"><input type="checkbox" id="applyAll"> 色の変更を 9 つすべてに適用</label>
+      <h4>色彩（9 つ共通）</h4>
       <select id="palette" aria-label="パレット"></select>
       <div class="colors" id="customColors" hidden>
         <label>暗部<input type="color" id="c1"></label>
@@ -115,14 +116,15 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
       <div class="colors"><label>背景<input type="color" id="bg"></label></div>
       <div id="swatch"></div>
       <div class="row">
-        <button id="randColorOne">色だけ抽選</button>
-        <button id="saveOne">PNG で保存</button>
+        <button id="randColor">色を抽選</button>
+        <button id="resetColor">色をリセット</button>
       </div>
     </div>
   </div>
 
   <p class="hint">ランダム探索は、発散せず、ボックス次元・余白が中庸で、最大 Lyapunov 指数が正（カオス）の候補だけを採用します（2D 版 ver.1 の「ランダム探索」と同じ基準）。
-  グリッドの状態はこのブラウザ（localStorage）に保存され、再読み込みしても残ります。</p>
+  「花の大きさ」を 1 より大きくすると隣どうしが重なり、重なった部分はスクリーン合成で明るく混ざります。
+  状態はこのブラウザ（localStorage）に保存され、再読み込みしても残ります。</p>
 
   <footer>Source: <a href="https://github.com/York-14/Generative-flower-Order-Chaos">github.com/York-14/Generative-flower-Order-Chaos</a></footer>
 </main>
@@ -223,7 +225,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   }
 
   // ==================================================================================
-  // 色彩（セルごとに保持）
+  // 色彩（9 つ共通の 1 系統）
   // ==================================================================================
   const PALETTES = {
     magma:   ["マグマ", [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]]],
@@ -241,14 +243,14 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
                           hue: 0, gamma: 0.8, exposure: 1, bg: "#0b0b10" };
   const COLOR_SLIDERS = [["hue", "色相", -180, 180, 1, 0], ["gamma", "ガンマ", 0.3, 2, 0.01, 2],
                          ["exposure", "露出", 0.4, 3, 0.01, 2]];
-  const DARK_BGS = ["#0b0b10", "#05070d", "#0d0a12", "#100808", "#06100c", "#000000"];
   const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
   const rgb2hex = c => "#" + c.map(v => clip(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("");
 
   function randomColor() {
     const palette = pick(["magma", "inferno", "viridis", "ocean", "sakura", "gold", "emerald", "mono", "ink", "custom"]);
     const col = { ...COLOR_DEFAULT, palette, hue: Math.round(rnd(-40, 40)),
-                  gamma: +rnd(0.6, 1.05).toFixed(2), exposure: +rnd(0.95, 1.5).toFixed(2), bg: pick(DARK_BGS) };
+                  gamma: +rnd(0.6, 1.0).toFixed(2), exposure: +rnd(1.0, 1.5).toFixed(2),
+                  bg: pick(["#0b0b10", "#05070d", "#0d0a12", "#100808", "#06100c", "#000000"]) };
     if (palette === "ink") { col.bg = pick(["#ffffff", "#f6f1e7", "#eef0f3"]); col.hue = 0; }
     if (palette === "mono") col.hue = 0;
     if (palette === "custom") {   // 色相環上で離した 3 色
@@ -262,10 +264,11 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     return col;
   }
 
-  function buildLUT(col, LUT) {
-    const stops = col.palette === "custom"
-      ? [hex2rgb(col.c1), hex2rgb(col.c2), hex2rgb(col.c3)] : PALETTES[col.palette][1];
-    const a = Math.cos(col.hue * Math.PI / 180), b = Math.sin(col.hue * Math.PI / 180);
+  const LUT = new Uint8ClampedArray(256 * 3);
+  function buildLUT() {
+    const stops = color.palette === "custom"
+      ? [hex2rgb(color.c1), hex2rgb(color.c2), hex2rgb(color.c3)] : PALETTES[color.palette][1];
+    const a = Math.cos(color.hue * Math.PI / 180), b = Math.sin(color.hue * Math.PI / 180);
     const M = [.213 + .787 * a - .213 * b, .715 - .715 * a - .715 * b, .072 - .072 * a + .928 * b,
                .213 - .213 * a + .143 * b, .715 + .285 * a + .140 * b, .072 - .072 * a - .283 * b,
                .213 - .213 * a - .787 * b, .715 - .715 * a + .715 * b, .072 + .928 * a + .072 * b];
@@ -274,103 +277,119 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
       const c = [0, 1, 2].map(k => stops[j][k] + f * (stops[j + 1][k] - stops[j][k]));
       for (let k = 0; k < 3; k++) LUT[i * 3 + k] = M[k * 3] * c[0] + M[k * 3 + 1] * c[1] + M[k * 3 + 2] * c[2];
     }
-    return LUT;
+    const g = [];
+    for (let i = 0; i <= 8; i++) { const k = Math.round(i / 8 * 255) * 3; g.push(`rgb(${LUT[k]},${LUT[k + 1]},${LUT[k + 2]}) ${i * 12.5}%`); }
+    $("swatch").style.background = `linear-gradient(90deg, ${g.join(",")})`;
   }
 
   // ==================================================================================
-  // セル（ヒストグラムを保持して、色変更は再計算なしで塗り直す）
+  // 一枚のキャンバスに 9 つの花を描く
+  // 花ごとにヒストグラムを持ち、合成時に花ごとに正規化 → スクリーン合成 → 共通の色で塗る
   // ==================================================================================
-  const W = 480, TOTAL = 1.5e6;
   const SKEY = "gfoc.grid.v2";
-  const cells = [];
-  const grid = $("grid");
+  const saved = store.get(SKEY) || {};
+  const color = { ...COLOR_DEFAULT, ...(saved.color || {}) };
+  const layout = { size: 0.92, ...(saved.layout || {}) };
 
-  function makeCell(idx) {
-    const el = document.createElement("div");
-    el.className = "cell"; el.tabIndex = 0; el.setAttribute("role", "button");
-    el.setAttribute("aria-label", `花 ${idx + 1} を選ぶ`);
-    const canvas = Object.assign(document.createElement("canvas"), { width: W, height: W });
-    const tag = Object.assign(document.createElement("span"), { className: "tag", textContent: idx + 1 });
-    const st = Object.assign(document.createElement("span"), { className: "st" });
+  const canvas = $("cv"), S = canvas.width, CELL = S / 3, TOTAL = 2e6;
+  const ctx = canvas.getContext("2d"), img = ctx.createImageData(S, S);
+  const inten = new Float32Array(S * S);
+  const wrap = $("wrap"), statusEl = $("status");
+  const flowers = [];
+
+  for (let i = 0; i < 9; i++) {
+    const mark = Object.assign(document.createElement("div"), { className: "mark" });
+    mark.style.left = `${(i % 3) * 100 / 3}%`; mark.style.top = `${Math.floor(i / 3) * 100 / 3}%`;
     const lk = Object.assign(document.createElement("span"), { className: "lock", textContent: "ロック", hidden: true });
-    el.append(canvas, tag, st, lk); grid.append(el);
-    const ctx = canvas.getContext("2d"), img = ctx.createImageData(W, W);
-    const hist = new Float32Array(W * W), LUT = new Uint8ClampedArray(256 * 3);
-    const cell = { idx, el, canvas, st, lk, q: null, color: { ...COLOR_DEFAULT }, locked: false, job: 0, gen: 0, max: 1 };
-
-    cell.paint = () => {
-      const col = cell.color, BG = hex2rgb(col.bg);
-      buildLUT(col, LUT);
-      el.style.background = col.bg;
-      const lm = Math.log1p(cell.max), d = img.data, g = col.gamma, ex = col.exposure;
-      for (let i = 0; i < hist.length; i++) {
-        let r = BG[0], gg = BG[1], b = BG[2];
-        if (hist[i]) {
-          const v = Math.min(1, Math.pow(Math.log1p(hist[i]) / lm, g) * ex), t = (v * 255) | 0;
-          const al = Math.min(1, v * 2.5);
-          r += (LUT[t * 3] - r) * al; gg += (LUT[t * 3 + 1] - gg) * al; b += (LUT[t * 3 + 2] - b) * al;
-        }
-        d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
-    };
-
-    cell.render = () => {
-      const id = ++cell.job, q = cell.q;
-      hist.fill(0); cell.max = 1;
-      const pr = q && probe(q);
-      if (!pr) { cell.paint(); st.textContent = q ? "diverged / fixed point" : ""; return; }
-      const scale = (W / 2 - W / 90) / (pr.R * 1.02);
-      let x = pr.x, y = pr.y, done = 0;
-      const CHUNK = 150000;
-      (function chunk() {
-        if (id !== cell.job) return;
-        for (let i = 0; i < CHUNK; i++) {
-          step(q, x, y); x = NX; y = NY;
-          const px = (W / 2 + x * scale) | 0, py = (W / 2 - y * scale) | 0;
-          if (px >= 0 && px < W && py >= 0 && py < W) { const v = ++hist[py * W + px]; if (v > cell.max) cell.max = v; }
-        }
-        done += CHUNK;
-        cell.paint();
-        st.textContent = done < TOTAL ? `n=${q.n}  ${(done / 1e6).toFixed(1)}M pts` : `n=${q.n}${q.omega === 0 ? "  D" : "  Z"}${q.n}`;
-        if (done < TOTAL) requestAnimationFrame(chunk);
-      })();
-    };
-
-    // 条件を満たすパラメータを探して差し替える（gen を進めると古い探索は破棄される）
-    cell.roll = async (gen = randomParams, newColor = $("randColor").checked) => {
-      const my = ++cell.gen;
-      cell.job++;               // 描画中のものを止める
-      st.textContent = "探索中…";
-      const q = await search(gen, () => my !== cell.gen);
-      if (my !== cell.gen) return;
-      if (!q) { st.textContent = "見つかりませんでした"; return; }
-      cell.q = q;
-      if (newColor) cell.color = randomColor();
-      cell.render(); save();
-      if (cell === sel) syncPanel();
-    };
-
-    el.addEventListener("click", () => select(cell));
-    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(cell); } });
-    return cell;
+    const busy = Object.assign(document.createElement("span"), { className: "busy", hidden: true });
+    mark.append(lk, busy); $("marks").append(mark);
+    flowers.push({ idx: i, q: null, locked: false, job: 0, gen: 0, hist: null, C: 0, max: 1, pts: 0, mark, lk, busy });
   }
-  for (let i = 0; i < 9; i++) cells.push(makeCell(i));
+
+  // 1 フレームに 1 回だけ合成する
+  let paintReq = 0;
+  const requestPaint = () => { if (!paintReq) paintReq = requestAnimationFrame(() => { paintReq = 0; paint(); }); };
+  function paint() {
+    inten.fill(0);
+    const g = color.gamma, ex = color.exposure;
+    for (const f of flowers) {
+      if (!f.hist || !f.q) continue;
+      const C = f.C, h = f.hist, lm = Math.log1p(f.max);
+      const ox = Math.round((f.idx % 3 + 0.5) * CELL - C / 2), oy = Math.round((Math.floor(f.idx / 3) + 0.5) * CELL - C / 2);
+      for (let j = 0; j < C; j++) {
+        const y = oy + j; if (y < 0 || y >= S) continue;
+        for (let i = 0; i < C; i++) {
+          const v0 = h[j * C + i]; if (!v0) continue;
+          const x = ox + i; if (x < 0 || x >= S) continue;
+          const v = Math.min(1, Math.pow(Math.log1p(v0) / lm, g) * ex), k = y * S + x;
+          inten[k] = 1 - (1 - inten[k]) * (1 - v);     // スクリーン合成
+        }
+      }
+    }
+    const BG = hex2rgb(color.bg), d = img.data;
+    wrap.style.background = color.bg;
+    for (let k = 0; k < inten.length; k++) {
+      let r = BG[0], gg = BG[1], b = BG[2];
+      const v = inten[k];
+      if (v) {
+        const t = (v * 255) | 0, al = Math.min(1, v * 2.5);
+        r += (LUT[t * 3] - r) * al; gg += (LUT[t * 3 + 1] - gg) * al; b += (LUT[t * 3 + 2] - b) * al;
+      }
+      d[k * 4] = r; d[k * 4 + 1] = gg; d[k * 4 + 2] = b; d[k * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const pts = flowers.reduce((s, f) => s + f.pts, 0);
+    statusEl.textContent = `9 flowers  ${(pts / 1e6).toFixed(1)}M pts`;
+  }
+
+  function render(f) {
+    const id = ++f.job, q = f.q;
+    f.C = Math.round(CELL * layout.size);
+    f.hist = new Float32Array(f.C * f.C); f.max = 1; f.pts = 0;
+    const pr = q && probe(q);
+    if (!pr) { f.hist = null; requestPaint(); return; }
+    const C = f.C, scale = (C / 2 - C / 90) / (pr.R * 1.02), h = f.hist;
+    let x = pr.x, y = pr.y;
+    const CHUNK = 120000;
+    (function chunk() {
+      if (id !== f.job) return;
+      for (let i = 0; i < CHUNK; i++) {
+        step(q, x, y); x = NX; y = NY;
+        const px = (C / 2 + x * scale) | 0, py = (C / 2 - y * scale) | 0;
+        if (px >= 0 && px < C && py >= 0 && py < C) { const v = ++h[py * C + px]; if (v > f.max) f.max = v; }
+      }
+      f.pts += CHUNK;
+      requestPaint();
+      if (f.pts < TOTAL) requestAnimationFrame(chunk);
+    })();
+  }
+
+  // 条件を満たすパラメータを探して差し替える（gen を進めると古い探索は破棄される）
+  async function roll(f, gen = randomParams) {
+    const my = ++f.gen;
+    f.busy.textContent = "探索中…"; f.busy.hidden = false;
+    const q = await search(gen, () => my !== f.gen);
+    if (my !== f.gen) return;
+    if (!q) { f.busy.textContent = "見つかりませんでした"; return; }
+    f.busy.hidden = true;
+    f.q = q; render(f); save();
+    if (f === sel) syncPanel();
+  }
+
+  // 9 つを同時に探索すると重いので 3 並列で順番に
+  async function rollMany(list, genFor) {
+    let next = 0;
+    const worker = async () => { while (next < list.length) { const f = list[next++]; await roll(f, genFor(f)); } };
+    await Promise.all([worker(), worker(), worker()]);
+  }
 
   function save() {
-    store.set(SKEY, { cells: cells.map(c => ({ q: c.q, color: c.color, locked: c.locked })), sel: sel ? sel.idx : 4 });
+    store.set(SKEY, { cells: flowers.map(f => ({ q: f.q, locked: f.locked })), color, layout, sel: sel ? sel.idx : 4 });
   }
 
   // ==================================================================================
-  // パネル（選択中のセル）
+  // パネル
   // ==================================================================================
-  const PARAMS = [
-    ["n", 3, 12, 1], ["lam", -3, 3, 0.001], ["alpha", -6, 6, 0.001],
-    ["beta", -2, 2, 0.001], ["gamma", -1.5, 1.5, 0.001], ["omega", -0.5, 0.5, 0.001],
-  ];
-  const SYM = { n: "n", lam: "λ", alpha: "α", beta: "β", gamma: "γ", omega: "ω" };
-  let sel = null;
-
   function slider(parent, label, lo, hi, st, digits, get, set) {
     const lab = document.createElement("label"); lab.className = "sl";
     lab.innerHTML = `<span>${label}</span>`;
@@ -382,117 +401,112 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     return show;
   }
 
-  let timer = null;
+  // 花の大きさ（1 を超えると隣と重なる）
+  let layoutTimer = null;
+  slider($("layoutSliders"), "大きさ", 0.6, 1.5, 0.01, 2, () => layout.size, v => {
+    layout.size = v;
+    clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(() => { flowers.forEach(f => f.q && render(f)); save(); }, 80);
+  })();
+
+  // 選択中の花のパラメータ
+  const PARAMS = [
+    ["n", 3, 12, 1], ["lam", -3, 3, 0.001], ["alpha", -6, 6, 0.001],
+    ["beta", -2, 2, 0.001], ["gamma", -1.5, 1.5, 0.001], ["omega", -0.5, 0.5, 0.001],
+  ];
+  const SYM = { n: "n", lam: "λ", alpha: "α", beta: "β", gamma: "γ", omega: "ω" };
+  let sel = null, timer = null;
   const paramShow = PARAMS.map(([k, lo, hi, st]) =>
     slider($("sliders"), SYM[k], lo, hi, st, k === "n" ? 0 : 3, () => sel && sel.q ? sel.q[k] : 0, v => {
       if (!sel || !sel.q) return;
-      sel.gen++;                // 探索中なら取り消す
+      sel.gen++; sel.busy.hidden = true;          // 探索中なら取り消す
       sel.q = { ...sel.q, [k]: v };
-      clearTimeout(timer); const c = sel; timer = setTimeout(() => { c.render(); save(); }, 40);
+      clearTimeout(timer); const f = sel; timer = setTimeout(() => { render(f); save(); }, 40);
     }));
-
-  const palSel = $("palette");
-  for (const [k, [name]] of Object.entries(PALETTES)) palSel.append(new Option(name, k));
-  let paintTimer = null;
-  const targets = () => $("applyAll").checked ? cells : sel ? [sel] : [];
-  function setColor(k, v) {
-    for (const c of targets()) c.color = { ...c.color, [k]: v };
-    recolor();
-  }
-  function recolor() {
-    $("customColors").hidden = !sel || sel.color.palette !== "custom";
-    drawSwatch(); save();
-    cancelAnimationFrame(paintTimer);
-    const ts = targets();
-    paintTimer = requestAnimationFrame(() => ts.forEach(c => c.paint()));
-  }
-  const colorShow = COLOR_SLIDERS.map(([k, label, lo, hi, st, dg]) =>
-    slider($("colorSliders"), label, lo, hi, st, dg, () => sel ? sel.color[k] : COLOR_DEFAULT[k], v => setColor(k, v)));
-  palSel.addEventListener("change", () => setColor("palette", palSel.value));
-  for (const k of ["c1", "c2", "c3", "bg"]) $(k).addEventListener("input", e => setColor(k, e.target.value));
-
-  function drawSwatch() {
-    if (!sel) return;
-    const LUT = buildLUT(sel.color, new Uint8ClampedArray(256 * 3)), g = [];
-    for (let i = 0; i <= 8; i++) { const k = Math.round(i / 8 * 255) * 3; g.push(`rgb(${LUT[k]},${LUT[k + 1]},${LUT[k + 2]}) ${i * 12.5}%`); }
-    $("swatch").style.background = `linear-gradient(90deg, ${g.join(",")})`;
-  }
 
   function syncPanel() {
     if (!sel) return;
     $("selTitle").textContent = `選択中の花 #${sel.idx + 1}`;
     $("lock").textContent = sel.locked ? "ロック解除" : "ロック";
     paramShow.forEach(f => f());
-    palSel.value = sel.color.palette;
-    for (const k of ["c1", "c2", "c3", "bg"]) $(k).value = sel.color[k];
-    colorShow.forEach(f => f());
-    $("customColors").hidden = sel.color.palette !== "custom";
-    drawSwatch();
   }
-  function select(cell) {
-    if (sel) sel.el.classList.remove("sel");
-    sel = cell; sel.el.classList.add("sel");
+  function select(f) {
+    if (sel) sel.mark.classList.remove("sel");
+    sel = f; sel.mark.classList.add("sel");
     syncPanel(); save();
   }
+  wrap.addEventListener("click", e => {
+    const r = wrap.getBoundingClientRect();
+    const i = clip(Math.floor((e.clientX - r.left) / r.width * 3), 0, 2), j = clip(Math.floor((e.clientY - r.top) / r.height * 3), 0, 2);
+    select(flowers[j * 3 + i]);
+  });
+  wrap.addEventListener("keydown", e => {   // 矢印キーで選択を移動
+    if (!sel) return;
+    const d = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[e.key];
+    if (d === undefined) return;
+    e.preventDefault();
+    const i = sel.idx + d;
+    if (i >= 0 && i < 9 && !(Math.abs(d) === 1 && Math.floor(i / 3) !== Math.floor(sel.idx / 3))) select(flowers[i]);
+  });
+  const showSel = () => wrap.classList.toggle("show-sel", $("showSel").checked);
+  $("showSel").addEventListener("change", showSel);
 
-  // ==================================================================================
-  // 操作
-  // ==================================================================================
-  // 9 セルを同時に探索すると重いので 3 並列で順番に
-  async function rollMany(list, genFor) {
-    let next = 0;
-    const worker = async () => { while (next < list.length) { const c = list[next++]; await c.roll(genFor(c)); } };
-    await Promise.all([worker(), worker(), worker()]);
+  // 色彩 UI
+  const palSel = $("palette");
+  for (const [k, [name]] of Object.entries(PALETTES)) palSel.append(new Option(name, k));
+  function recolor() {
+    $("customColors").hidden = color.palette !== "custom";
+    buildLUT(); save(); requestPaint();
   }
-  const unlocked = () => cells.filter(c => !c.locked);
+  const colorShow = COLOR_SLIDERS.map(([k, label, lo, hi, st, dg]) =>
+    slider($("colorSliders"), label, lo, hi, st, dg, () => color[k], v => { color[k] = v; recolor(); }));
+  function syncColor() {
+    palSel.value = color.palette;
+    for (const k of ["c1", "c2", "c3", "bg"]) $(k).value = color[k];
+    colorShow.forEach(f => f());
+  }
+  palSel.addEventListener("change", () => { color.palette = palSel.value; recolor(); });
+  for (const k of ["c1", "c2", "c3", "bg"]) $(k).addEventListener("input", e => { color[k] = e.target.value; recolor(); });
+  $("randColor").addEventListener("click", () => { Object.assign(color, randomColor()); syncColor(); recolor(); });
+  $("resetColor").addEventListener("click", () => { Object.assign(color, COLOR_DEFAULT); syncColor(); recolor(); });
 
-  $("rollAll").addEventListener("click", () => rollMany(unlocked(), () => randomParams));
+  // 操作
+  const unlocked = () => flowers.filter(f => !f.locked);
+  function maybeRollColor() {
+    if ($("rollColor").checked) { Object.assign(color, randomColor()); syncColor(); recolor(); }
+  }
+  $("rollAll").addEventListener("click", () => { maybeRollColor(); rollMany(unlocked(), () => randomParams); });
   $("variations").addEventListener("click", () => {
     if (!sel || !sel.q) return;
-    const base = sel.q, list = unlocked().filter(c => c !== sel);
-    // セルごとに変化の大きさを変えて、近いものから遠いものまで並べる
-    list.forEach((c, i) => { c.varScale = 0.5 + 1.5 * i / Math.max(1, list.length - 1); });
-    rollMany(list, c => () => mutate(base, c.varScale));
+    const base = sel.q, list = unlocked().filter(f => f !== sel);
+    // 花ごとに変化の大きさを変えて、近いものから遠いものまで並べる
+    list.forEach((f, i) => { f.varScale = 0.5 + 1.5 * i / Math.max(1, list.length - 1); });
+    rollMany(list, f => () => mutate(base, f.varScale));
   });
-  $("rollOne").addEventListener("click", () => sel && sel.roll());
+  $("rollOne").addEventListener("click", () => sel && roll(sel));
   $("lock").addEventListener("click", () => {
     if (!sel) return;
     sel.locked = !sel.locked; sel.lk.hidden = !sel.locked;
     syncPanel(); save();
   });
-  $("randColorOne").addEventListener("click", () => {
-    if (!sel) return;
-    const col = randomColor();
-    for (const c of targets()) c.color = { ...col };
-    syncPanel(); recolor();
-  });
-  $("saveOne").addEventListener("click", () => {
-    if (!sel || !sel.q) return;
-    const a = document.createElement("a"); a.download = `icon_${sel.idx + 1}_n${Math.round(sel.q.n)}.png`;
-    a.href = sel.canvas.toDataURL(); a.click();
-  });
-  $("saveGrid").addEventListener("click", () => {
-    const G = 12, out = Object.assign(document.createElement("canvas"), { width: W * 3 + G * 4, height: W * 3 + G * 4 });
-    const ctx = out.getContext("2d");
-    ctx.fillStyle = "#0b0b10"; ctx.fillRect(0, 0, out.width, out.height);
-    cells.forEach((c, i) => ctx.drawImage(c.canvas, G + (i % 3) * (W + G), G + Math.floor(i / 3) * (W + G)));
-    const a = document.createElement("a"); a.download = "icon_grid_3x3.png"; a.href = out.toDataURL(); a.click();
+  $("saveAll").addEventListener("click", () => {
+    const a = document.createElement("a"); a.download = "icon_grid_3x3.png"; a.href = canvas.toDataURL(); a.click();
   });
 
-  // 起動：保存済みのグリッドがあれば復元、なければ 9 つを探索
-  const saved = store.get(SKEY);
-  if (saved && Array.isArray(saved.cells) && saved.cells.length === 9) {
+  // 起動：保存済みの花があれば復元、なければ 9 つを探索
+  syncColor(); buildLUT(); $("customColors").hidden = color.palette !== "custom"; showSel();
+  if (Array.isArray(saved.cells) && saved.cells.length === 9) {
     saved.cells.forEach((s, i) => {
-      const c = cells[i];
-      c.q = s.q; c.color = { ...COLOR_DEFAULT, ...(s.color || {}) };
-      c.locked = !!s.locked; c.lk.hidden = !c.locked;
+      const f = flowers[i];
+      f.q = s.q || null; f.locked = !!s.locked; f.lk.hidden = !f.locked;
     });
-    select(cells[clip(saved.sel | 0, 0, 8)]);
-    cells.forEach(c => c.q ? c.render() : c.roll());
+    select(flowers[clip(saved.sel | 0, 0, 8)]);
+    flowers.forEach(f => f.q ? render(f) : roll(f));
   } else {
-    select(cells[4]);
-    rollMany(cells, () => randomParams);
+    select(flowers[4]);
+    rollMany(flowers, () => randomParams);
   }
+  requestPaint();
 })();
 </script>
 </body>
