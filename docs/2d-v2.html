@@ -103,7 +103,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   <p class="lead">対称カオス写像 z<sub>t+1</sub> = ( λ + α|z|² + β Re(z<sup>n</sup>) + iω ) z + γ z̄<sup>n−1</sup> の花を、
   一枚のビジュアルの上に 3 × 3 で 9 つ配置します。9 つの花にはそれぞれ異なるパラメータをランダムに与え、色は全体で同じ系統にそろえます。
   花をクリックすると、その花のパラメータを右のパネルで調整できます。
-  <a href="index.html">← 2D 版（ver.1）へ</a></p>
+  <a href="index.html">← 2D 版（ver.1）へ</a>　<a href="stl/">コースター STL を作る →</a></p>
 
   <div class="studio">
     <div class="canvas-wrap" id="wrap" tabindex="0" role="button" aria-label="花を選ぶ">
@@ -133,6 +133,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
       </div>
       <div id="sliders"></div>
       <label class="check"><input type="checkbox" id="showSel"> 選択枠を表示</label>
+      <button id="toStl">この花でコースター STL を作る</button>
 
       <h4>色彩（9 つ共通）</h4>
       <select id="palette" aria-label="パレット"></select>
@@ -549,6 +550,16 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
       markEdited();
       clearTimeout(timer); const f = sel; timer = setTimeout(() => { render(f); save(); }, 40);
     }));
+
+  // 選択中の花をコースター STL ツールで開く。シードの結果のままならシード、編集していればパラメータを渡す
+  $("toStl").addEventListener("click", () => {
+    if (!sel || !sel.q) return;
+    const q = sel.q, fromSeed = seed !== null && !edited;
+    const url = fromSeed ? `stl/?seed=${pad12(seed)}&flower=${sel.idx + 1}`
+      : `stl/?q=${[q.n, q.lam, q.alpha, q.beta, q.gamma, q.omega].map(v => +(+v).toPrecision(12)).join(",")}` +
+        (seed !== null ? `&name=s${pad12(seed)}f${sel.idx + 1}` : "");
+    window.open(url, "_blank");
+  });
 
   function syncPanel() {
     if (!sel) return;
