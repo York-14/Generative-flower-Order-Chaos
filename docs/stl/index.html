@@ -60,6 +60,7 @@
       <button id="runSeed">シードから作る</button>
 
       <h4>形</h4>
+      <label class="check"><input type="checkbox" id="flat" checked> 上面を平らに・輪郭をなめらかに（FDM 向け・おすすめ）</label>
       <div id="sliders"></div>
       <label class="check"><input type="checkbox" id="bridges" checked> 離れた部分をブリッジでつなぐ</label>
       <label class="check"><input type="checkbox" id="symmetric" checked> ブリッジを n 回対称に複製する</label>
@@ -70,6 +71,19 @@
       <dl class="stats" id="stats"><dt>外径</dt><dd>–</dd><dt>高さ</dt><dd>–</dd><dt>重さの目安</dt><dd>–</dd><dt>三角形</dt><dd>–</dd></dl>
       <button id="save" class="primary" disabled>STL を保存</button>
       <p class="hint">重さは充填 100% の PLA（1.24 g/cm³）としての目安です。</p>
+      <details class="tips">
+        <summary>Bambu Studio のおすすめ設定（A1 / A1 mini）</summary>
+        <ul>
+          <li>プロファイル：<b>0.12mm Fine</b> か 0.16mm Optimal</li>
+          <li>品質 → 壁ジェネレータ：<b>Arachne</b>（細い線を幅の違う 1 本の線で描く）</li>
+          <li>品質 → 解像度：<b>0.03 mm</b>、円弧フィッティング：オン</li>
+          <li>品質 → シーム位置：<b>背面（Back）</b> か 整列（Aligned）</li>
+          <li>品質 → アイロン：<b>上面のみ（Top surfaces）</b>。上面がつるっと仕上がる</li>
+          <li>強度 → 壁ループ：3、上面パターン：<b>Monotonic line</b></li>
+          <li>速度 → 外壁：<b>60〜80 mm/s</b> に下げると輪郭がきれい</li>
+          <li>その他 → ブリム：外側のみ 3 mm（細い突起の剥がれ防止）</li>
+        </ul>
+      </details>
     </aside>
   </div>
 
@@ -79,6 +93,7 @@
 </main>
 <script src="vendor/three.min.js"></script>
 <script src="vendor/OrbitControls.js"></script>
+<script src="vendor/earcut.js"></script>
 <script src="js/flower-core.js"></script>
 <script src="js/pipeline.js"></script>
 <script src="js/app.js"></script>

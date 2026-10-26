@@ -11,23 +11,26 @@ const store = {
 // ───────── パラメータ ─────────
 const PNG_THRESHOLD = 0.065;                       // PNG は点が少なく粒が粗いので少し低めが合う
 const SLIDERS = [
-  ["diameter",    "外径",       30, 200, 0.5, 1, "mm"],
+  ["diameter",    "外径",       30, 170, 0.5, 1, "mm"],
   ["base",        "厚み",       0.6, 5, 0.05, 2, "mm"],
   ["relief",      "凹凸",       0, 3, 0.05, 2, "mm"],
   ["threshold",   "しきい値",   0.02, 0.3, 0.005, 3, ""],
   ["grow",        "線の太さ",   0, 1, 0.01, 2, "mm"],
+  ["smooth",      "輪郭の丸み", 0, 0.8, 0.01, 2, "mm"],
   ["bridgeWidth", "ブリッジ幅", 0.6, 4, 0.1, 1, "mm"],
   ["minHole",     "最小の穴",   0, 6, 0.1, 1, "mm²"],
-  ["blur",        "なめらかさ", 0, 0.6, 0.01, 2, "mm"],
-  ["cell",        "メッシュ",   0.08, 0.3, 0.01, 2, "mm"],
+  ["blur",        "ぼかし",     0, 0.6, 0.01, 2, "mm"],
+  ["cell",        "細かさ",     0.06, 0.3, 0.01, 2, "mm"],
 ];
 const HELP = {
-  diameter: "でき上がりの外径", base: "どこでも確保する厚み", relief: "明るい部分ほど高くする量",
+  diameter: "でき上がりの外径（A1 mini のベッドは 180 mm 角）", base: "厚み。凹凸ありのときはどこでも確保する厚み",
+  relief: "凹凸ありのとき、明るい部分ほど高くする量",
   threshold: "このトーン以上を構造として残す（下げると太く・つながりやすく）", grow: "細い線を太らせる半径（線幅は約 2 倍）",
+  smooth: "輪郭の角を丸め、細いヒゲを消す量（上面を平らにするとき）",
   bridgeWidth: "離れた部分をつなぐ橋の幅", minHole: "これより小さい穴は埋める", blur: "トーンのぼかし",
-  cell: "メッシュの細かさ（小さいほど精密・ファイルが重い）",
+  cell: "輪郭・メッシュを取る格子の細かさ（小さいほど精密）",
 };
-const KEY = "ocs.params.v1";
+const KEY = "ocs.params.v2";                    // v2: 上面を平らにする方式が既定に
 const P = { ...CP.DEFAULTS, ...(store.get(KEY) || {}) };
 let mode = null;                                  // "seed" | "image"
 const shows = [];
@@ -42,13 +45,21 @@ for (const [k, label, lo, hi, st, dg, unit] of SLIDERS) {
   lab.append(inp, out); $("sliders").append(lab); shows.push(show); show();
 }
 for (let n = 2; n <= 12; n++) $("nsel").append(new Option(String(n), String(n)));
-$("bridges").checked = P.bridges; $("symmetric").checked = P.symmetric;
+$("bridges").checked = P.bridges; $("symmetric").checked = P.symmetric; $("flat").checked = P.flat;
+// 上面を平らにするときは「凹凸」、凹凸ありのときは「輪郭の丸み」を使わない
+const sliderRow = k => $("sliders").children[SLIDERS.findIndex(s => s[0] === k)];
+function syncFlat() {
+  sliderRow("relief").classList.toggle("off", P.flat);
+  sliderRow("smooth").classList.toggle("off", !P.flat);
+}
+syncFlat();
+$("flat").addEventListener("change", () => { P.flat = $("flat").checked; syncFlat(); changed(); });
 $("bridges").addEventListener("change", () => { P.bridges = $("bridges").checked; changed(); });
 $("symmetric").addEventListener("change", () => { P.symmetric = $("symmetric").checked; changed(); });
 $("nsel").addEventListener("change", changed);
 $("reset").addEventListener("click", () => {
   Object.assign(P, CP.DEFAULTS); if (mode === "image") P.threshold = PNG_THRESHOLD;
-  $("bridges").checked = P.bridges; $("symmetric").checked = P.symmetric; $("nsel").value = "0";
+  $("bridges").checked = P.bridges; $("symmetric").checked = P.symmetric; $("flat").checked = P.flat; $("nsel").value = "0"; syncFlat();
   shows.forEach(f => f()); changed();
 });
 
@@ -91,7 +102,7 @@ worker.onmessage = e => {
     $("legend").hidden = false; $("save").disabled = false;
     const st = m.stats, dd = $("stats").querySelectorAll("dd");
     dd[0].textContent = `${st.diameter.toFixed(1)} mm`;
-    dd[1].textContent = `${(P.base).toFixed(2)}〜${st.height.toFixed(2)} mm`;
+    dd[1].textContent = st.flat ? `${st.height.toFixed(2)} mm（平ら）` : `${(P.base).toFixed(2)}〜${st.height.toFixed(2)} mm`;
     dd[2].textContent = `${(st.volume / 1000 * 1.24).toFixed(1)} g`;
     dd[3].textContent = st.triangles.toLocaleString();
     $("nOut").textContent = `n=${st.n}`;
