@@ -70,6 +70,12 @@ a { color: var(--accent); }
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .panel .seedrow button { width: auto; }
+.panel .seedcur { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 8px; }
+.panel .seedcur code {
+  font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; padding: 7px 10px; border-radius: 8px;
+  background: var(--code-bg); border: 1px solid var(--border); user-select: all; -webkit-user-select: all; overflow-wrap: anywhere;
+}
+.panel .seedcur button { width: auto; margin-top: 0; }
 .panel .check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 10px; }
 .panel .check input { accent-color: var(--accent); }
 .panel .colors { display: flex; gap: 8px; margin-top: 8px; }
@@ -113,6 +119,10 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     </div>
     <div class="panel">
       <h4>全体</h4>
+      <div class="seedcur">
+        <code id="seedCur" title="クリックで全選択">—</code>
+        <button id="seedCopy">コピー</button>
+      </div>
       <button id="rollAll" class="primary">9 つをランダム探索</button>
       <button id="variations">選んだ花の変奏で埋める</button>
       <div class="seedrow">
@@ -502,6 +512,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
   function showSeed() {
     $("seed").textContent = seed === null ? "" : `seed ${pad12(seed)}${edited ? " *" : ""}`;
     $("seedIn").placeholder = seed === null ? "12 桁のシード" : pad12(seed);
+    $("seedCur").textContent = seed === null ? "—" : `${pad12(seed)}${edited ? "（編集済み）" : ""}`;
+    $("seedCopy").disabled = seed === null;
     try {
       const url = new URL(location.href);
       if (seed !== null && !edited) url.searchParams.set("seed", pad12(seed)); else url.searchParams.delete("seed");
@@ -618,6 +630,18 @@ footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
     seedError(); $("seedIn").value = ""; generate(s);
   };
   $("seedIn").addEventListener("input", () => seedError());
+  $("seedCopy").addEventListener("click", async () => {
+    if (seed === null) return;
+    const btn = $("seedCopy"), text = pad12(seed);
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {
+      const sel = getSelection(), r = document.createRange();
+      r.selectNodeContents($("seedCur")); sel.removeAllRanges(); sel.addRange(r);
+      try { ok = document.execCommand("copy"); } catch {}
+    }
+    btn.textContent = ok ? "コピー済み" : "選択しました";
+    clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = "コピー"; }, 1500);
+  });
   $("seedNow").addEventListener("click", () => { seedError(); generate(dateSeed(new Date())); });
   $("seedGo").addEventListener("click", seedFromInput);
   $("seedIn").addEventListener("keydown", e => { if (e.key === "Enter") seedFromInput(); });
