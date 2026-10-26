@@ -492,7 +492,7 @@ function buildMeshFlat(st) {
   }
   let area = 0, dia = 0;
   for (const o of outers) { area += o.a; for (const h of o.holes) area += ringArea(h); for (const p of o.r) dia = Math.max(dia, 2 * Math.hypot(p[0], p[1])); }
-  return { positions: pos, indices: Uint32Array.from(idx), nVerts: 2 * N, triangles: nT, volume: vol, area,
+  return { field: { f, G1, R, c }, positions: pos, indices: Uint32Array.from(idx), nVerts: 2 * N, triangles: nT, volume: vol, area,
            diameter: dia, height: Z, rings: { outers: outers.length, holes: holes.length, points: N }, flat: true };
 }
 
@@ -566,6 +566,24 @@ function buildMeshGrid(st) {
            diameter: dia, height: P.base + P.relief, grid: { M, G, R, CELL } };
 }
 
+// 2D プレビュー：実際に STL になる形を塗る（青 = 印刷される部分、ピンク = ブリッジ）。
+// 上面を平らにする方式では、輪郭の丸みをかけた後の場 f（等高線 0.5 が STL の輪郭）を使う
+function previewRGBA(st, mesh, size = 720) {
+  const { mask, bridges, W, H, ppm } = st, img = new Uint8ClampedArray(size * size * 4), fld = mesh && mesh.field;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const px = (x + 0.5) * W / size, py = (y + 0.5) * H / size;
+    const sx = Math.min(W - 1, Math.floor(px)), sy = Math.min(H - 1, Math.floor(py)), k = sy * W + sx;
+    let inside;
+    if (fld) {
+      const xm = (px - W / 2) / ppm, ym = -(py - H / 2) / ppm;
+      inside = bilinear(fld.f, fld.G1, fld.G1, (xm + fld.R) / fld.c, (ym + fld.R) / fld.c) > 0.5;
+    } else inside = !!mask[k];
+    const o = (y * size + x) * 4, c = !inside ? [0, 0, 0] : bridges[k] ? [244, 114, 152] : [142, 202, 255];
+    img[o] = c[0]; img[o + 1] = c[1]; img[o + 2] = c[2]; img[o + 3] = 255;
+  }
+  return img;
+}
+
 function toSTL(positions, name = "order-chaos-stl") {
   const nT = positions.length / 9, buf = new ArrayBuffer(84 + nT * 50), dv = new DataView(buf);
   const hdr = new TextEncoder().encode(name.slice(0, 80));
@@ -593,6 +611,6 @@ function checkWatertight(indices) {
   return { ok: true };
 }
 
-root.CoasterPipeline = { DEFAULTS, toneFromSeed, toneFromParams, toneFromImage, detectSymmetry, sourceTone, buildStructure, buildMesh, toSTL, checkWatertight,
+root.CoasterPipeline = { DEFAULTS, toneFromSeed, toneFromParams, toneFromImage, detectSymmetry, sourceTone, buildStructure, buildMesh, previewRGBA, toSTL, checkWatertight,
                          _internal: { edt, label, dilate, gaussianBlur, cheapestPath, resample } };
 })(typeof globalThis !== "undefined" ? globalThis : this);
