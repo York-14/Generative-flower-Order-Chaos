@@ -13,18 +13,20 @@ const FC = () => root.FlowerCore;
 
 const DEFAULTS = {
   diameter: 91,      // 外径 (mm)
-  base: 1.8,         // どこでも確保する厚み (mm)
-  relief: 0.9,       // 明るさ 1 のときの追加の高さ (mm)
+  flat: true,        // 上面を平らにして輪郭をなめらかな曲線で作る（FDM 向け）。false で凹凸付き
+  base: 2.4,         // 厚み (mm)。凹凸ありのときは「どこでも確保する厚み」
+  relief: 0.9,       // 凹凸ありのとき、明るさ 1 で足す高さ (mm)
+  smooth: 0.20,      // 輪郭のなめらかさ (mm)。上面を平らにするときの角の丸め・ヒゲの除去
   threshold: 0.08,   // 構造とみなすトーン
   grow: 0.30,        // 細い線を太らせる半径 (mm) → 線幅は約 2×grow 以上
   blur: 0.12,        // トーンの平滑化 (mm)
   bridgeWidth: 1.4,  // ブリッジ幅 (mm)
   bridges: true,     // 離れた部分をブリッジでつなぐ
   symmetric: true,   // ブリッジを n 回対称に複製する
-  minHole: 1.0,      // これより小さい穴は埋める (mm²)
+  minHole: 1.2,      // これより小さい穴は埋める (mm²)。FDM では直径 1.2 mm 未満の穴はつぶれやすい
   close: 0.15,       // 隙間を閉じる半径 (mm)
   majorFrac: 0.02,   // 最大成分のこの割合以上の島は「つなぐ対象」、未満は捨てる
-  cell: 0.12,        // メッシュの格子 (mm)
+  cell: 0.10,        // 格子 (mm)。凹凸ありはこのマス目でメッシュ、平らなら輪郭を取る細かさ
   gamma: 0.80,       // シード入力時のトーンカーブ（ページの既定値）
   points: 3e8,       // シード入力時の軌道の点数
   res: 1400,         // シード入力時の密度場の解像度 (px)
@@ -360,8 +362,152 @@ function buildStructure(src, P = {}, n = 0) {
   return { mask: m, bridges, tone, W, H, ppm, n, nBridges, pieces, bridgeFrac: barea / area, P };
 }
 
+
+// ───────────────────────────── 構造 → なめらかな輪郭 → 平らなメッシュ（FDM 向け） ─────────────────────────────
+// マスクをぼかした場を 0.5 で等高線にし（marching squares）、Douglas–Peucker で間引いた
+// 閉曲線（外周は反時計回り・穴は時計回り）を earcut で三角形分割して、厚み base で押し出す。
+function simplifyRing(pts, tol) {               // 閉曲線の Douglas–Peucker
+  const n = pts.length; if (n < 8) return pts;
+  let far = 0, fd = -1;
+  for (let i = 1; i < n; i++) { const d = (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2; if (d > fd) { fd = d; far = i; } }
+  const keep = new Uint8Array(n); keep[0] = keep[far] = 1;
+  const stack = [[0, far], [far, n]], t2 = tol * tol;
+  while (stack.length) {
+    const [a, b] = stack.pop(); if (b - a < 2) continue;
+    const A = pts[a], B = pts[b % n], dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1e-12;
+    let mi = -1, md = -1;
+    for (let i = a + 1; i < b; i++) {
+      const P = pts[i], t = Math.max(0, Math.min(1, ((P[0] - A[0]) * dx + (P[1] - A[1]) * dy) / L2));
+      const d = (P[0] - A[0] - t * dx) ** 2 + (P[1] - A[1] - t * dy) ** 2;
+      if (d > md) { md = d; mi = i; }
+    }
+    if (md > t2) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  const out = []; for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+  return out;
+}
+const ringArea = r => { let a = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] - r[i][0]) * (r[j][1] + r[i][1]); return a / 2; };
+function pointInRing(p, r) {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++)
+    if ((r[i][1] > p[1]) !== (r[j][1] > p[1]) && p[0] < (r[j][0] - r[i][0]) * (p[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) inside = !inside;
+  return inside;
+}
+
+function buildMeshFlat(st) {
+  const { mask, W, H, ppm, P } = st, cx = W / 2, cy = H / 2;
+  if (typeof root.earcut !== "function") throw new Error("earcut が読み込まれていません");
+  let rmax = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (mask[y * W + x]) rmax = Math.max(rmax, Math.hypot(x + 0.5 - cx, y + 0.5 - cy));
+  const c = P.cell, R = rmax / ppm + 1 + 3 * P.smooth, G1 = Math.ceil(2 * R / c) + 1;   // 格子点 G1 × G1
+  const col = xmm => cx + xmm * ppm - 0.5, row = ymm => cy - ymm * ppm - 0.5;
+  const mf = Float32Array.from(mask);
+  let f = new Float32Array(G1 * G1);
+  for (let i = 0; i < G1; i++) for (let j = 0; j < G1; j++) f[i * G1 + j] = bilinear(mf, W, H, col(j * c - R), row(i * c - R));
+  f = gaussianBlur(f, G1, G1, P.smooth / c);
+  for (let k = 0; k < G1; k++) f[k] = f[(G1 - 1) * G1 + k] = f[k * G1] = f[k * G1 + G1 - 1] = 0;   // 外周は必ず外側
+  // ぼかしで切れた小片は捨てて 1 ピースに
+  { const { lab, sizes } = label(Uint8Array.from(f, v => v > 0.5), G1, G1, false), b = largestId(sizes);
+    for (let k = 0; k < f.length; k++) if (lab[k] !== b) f[k] = Math.min(f[k], 0.49); }
+
+  // marching squares（内側を左に見る向き）。辺 id: 横 = 2·node, 縦 = 2·node + 1
+  const inside = k => f[k] > 0.5, node = (i, j) => i * G1 + j;
+  const edgePt = new Map(), next = new Map();
+  const pt = (id) => {
+    let p = edgePt.get(id); if (p) return p;
+    const nd = id >> 1, i = Math.floor(nd / G1), j = nd % G1, a = f[nd], b = (id & 1) ? f[nd + G1] : f[nd + 1];
+    const t = (0.5 - a) / (b - a);
+    p = (id & 1) ? [j * c - R, (i + t) * c - R] : [(j + t) * c - R, i * c - R];
+    edgePt.set(id, p); return p;
+  };
+  for (let i = 0; i < G1 - 1; i++) for (let j = 0; j < G1 - 1; j++) {
+    const n00 = node(i, j), n01 = n00 + 1, n11 = n00 + G1 + 1, n10 = n00 + G1;
+    const C = [n00, n01, n11, n10], ins = C.map(inside);
+    if (ins[0] === ins[1] && ins[1] === ins[2] && ins[2] === ins[3]) continue;
+    const E = [2 * n00, 2 * n01 + 1, 2 * n10, 2 * n00 + 1];   // 下・右・上・左（反時計回り）
+    const cross = [];                                        // [辺 k, exit?]
+    for (let k = 0; k < 4; k++) if (ins[k] !== ins[(k + 1) % 4]) cross.push([k, ins[k]]);
+    const connected = cross.length === 4 && (f[n00] + f[n01] + f[n11] + f[n10]) / 4 > 0.5;
+    for (let q = 0; q < cross.length; q++) {
+      if (!cross[q][1]) continue;                            // exit から entry へ線を引く
+      // 鞍点：中心が内側なら内側どうしがつながる → 次の entry、そうでなければ前の entry と組む
+      const m = cross.length, partner = connected ? cross[(q + 1) % m] : cross[(q - 1 + m) % m];
+      const pk = cross.length === 2 ? cross[(q + 1) % 2] : partner;
+      next.set(E[cross[q][0]], E[pk[0]]);
+    }
+  }
+  const rings = [], used = new Set();
+  for (const start of next.keys()) {
+    if (used.has(start)) continue;
+    const r = []; let e = start;
+    while (!used.has(e)) { used.add(e); r.push(pt(e)); e = next.get(e); if (e === undefined) break; }
+    if (r.length >= 3) rings.push(r);
+  }
+  // 間引き・小さすぎる輪の除去・外周と穴の対応づけ
+  const tol = Math.min(0.02, c * 0.2);
+  const outers = [], holes = [];
+  for (let r of rings) {
+    r = simplifyRing(r, tol);
+    if (r.length < 3) continue;
+    const a = ringArea(r);
+    if (a > 0.5) outers.push({ r, a, holes: [] });
+    else if (a < -0.05) holes.push(r);
+  }
+  if (!outers.length) throw new Error("輪郭を作れませんでした。線の太さを上げてください。");
+  outers.sort((x, y) => y.a - x.a);
+  for (const h of holes) { const o = outers.find(o => pointInRing(h[0], o.r)) || outers[0]; o.holes.push(h); }
+
+  // 頂点（上面 0..N-1、底面 N..2N-1）と三角形
+  const verts = [], tris = [];
+  for (const o of outers) {
+    const loops = [o.r, ...o.holes], flat = [], holeIdx = [], base = verts.length / 2;
+    for (const L of loops) { if (L !== o.r) holeIdx.push(flat.length / 2); for (const p of L) flat.push(p[0], p[1]); }
+    for (let k = 0; k < flat.length; k++) verts.push(flat[k]);
+    const T = root.earcut(flat, holeIdx, 2);
+    for (let t = 0; t < T.length; t += 3) {
+      let [a, b, d] = [T[t], T[t + 1], T[t + 2]];
+      const ar = (flat[2 * b] - flat[2 * a]) * (flat[2 * d + 1] - flat[2 * a + 1]) - (flat[2 * d] - flat[2 * a]) * (flat[2 * b + 1] - flat[2 * a + 1]);
+      if (ar < 0) [b, d] = [d, b];
+      tris.push(['t', base + a, base + b, base + d]);
+    }
+    let off = base;
+    for (const L of loops) {                                // 壁：辺 a→b（内側が左）の右側が外向き
+      for (let k = 0; k < L.length; k++) tris.push(['w', off + k, off + (k + 1) % L.length]);
+      off += L.length;
+    }
+  }
+  const N = verts.length / 2, Z = P.base, idx = [];
+  for (const t of tris) {
+    if (t[0] === 't') { idx.push(t[1], t[2], t[3]); idx.push(t[1] + N, t[3] + N, t[2] + N); }
+    else { const a = t[1], b = t[2]; idx.push(a + N, b + N, b, a + N, b, a); }
+  }
+  const nT = idx.length / 3, pos = new Float32Array(nT * 9);
+  const vxyz = v => v < N ? [verts[2 * v], verts[2 * v + 1], Z] : [verts[2 * (v - N)], verts[2 * (v - N) + 1], 0];
+  let vol = 0;
+  for (let t = 0; t < nT; t++) {
+    const p = [vxyz(idx[3 * t]), vxyz(idx[3 * t + 1]), vxyz(idx[3 * t + 2])];
+    for (let k = 0; k < 3; k++) pos.set(p[k], t * 9 + k * 3);
+    const [A, B, D] = p;
+    vol += (A[0] * (B[1] * D[2] - B[2] * D[1]) - A[1] * (B[0] * D[2] - B[2] * D[0]) + A[2] * (B[0] * D[1] - B[1] * D[0])) / 6;
+  }
+  let area = 0, dia = 0;
+  for (const o of outers) { area += o.a; for (const h of o.holes) area += ringArea(h); for (const p of o.r) dia = Math.max(dia, 2 * Math.hypot(p[0], p[1])); }
+  return { positions: pos, indices: Uint32Array.from(idx), nVerts: 2 * N, triangles: nT, volume: vol, area,
+           diameter: dia, height: Z, rings: { outers: outers.length, holes: holes.length, points: N }, flat: true };
+}
+
 // ───────────────────────────── 構造 → メッシュ / STL ─────────────────────────────
 function buildMesh(st) {
+  if (st.P.flat) {
+    const m = buildMeshFlat(st);
+    if (checkWatertight(m.indices).ok) return m;
+    // 三角形分割が閉じなかったとき（まれ）は格子のメッシュで作り直す
+    st = { ...st, P: { ...st.P, relief: 0 } };
+    const g = buildMeshGrid(st); g.fallback = true; return g;
+  }
+  return buildMeshGrid(st);
+}
+function buildMeshGrid(st) {
   const { mask, bridges, tone, W, H, ppm, P } = st, cx = W / 2, cy = H / 2;
   // 構造の外接半径から格子の範囲を決める
   let rmax = 0;

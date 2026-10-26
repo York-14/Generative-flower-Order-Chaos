@@ -1,5 +1,5 @@
 /* worker.js — 重い計算（軌道・画像処理・メッシュ）を UI と別スレッドで行う */
-importScripts("flower-core.js", "pipeline.js");
+importScripts("../vendor/earcut.js", "flower-core.js", "pipeline.js");
 const CP = self.CoasterPipeline;
 let src = null, srcN = 0;
 
@@ -52,7 +52,7 @@ self.onmessage = e => {
       const mesh = CP.buildMesh(st), pv = maskPreview(st);
       post({ type: "result", job: m.job, preview: pv, positions: mesh.positions,
              stats: { triangles: mesh.triangles, volume: mesh.volume, area: mesh.area, diameter: mesh.diameter,
-                      height: mesh.height, bridges: st.nBridges, bridgeFrac: st.bridgeFrac, n } },
+                      height: mesh.height, flat: !!mesh.flat, bridges: st.nBridges, bridgeFrac: st.bridgeFrac, n } },
            [pv.buffer, mesh.positions.buffer]);
     }
   } catch (err) {
