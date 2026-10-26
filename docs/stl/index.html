@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order&amp;Chaos → STL</title>
+<meta name="description" content="Order&Chaos の花（対称カオス写像）から、構造だけを残したレース状のコースター STL を作る。">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <h1>Order&amp;Chaos → STL</h1>
+  <p class="lead">Order&amp;Chaos で保存した PNG かシードから、花の構造だけを残したレース状のコースターを作り、STL で書き出します。</p>
+
+  <div class="studio">
+    <section class="views">
+      <div class="view-tabs" role="tablist">
+        <button role="tab" class="tab on" data-view="2d">2D（印刷される部分）</button>
+        <button role="tab" class="tab" data-view="3d">3D</button>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="view2d" width="720" height="720" aria-label="印刷される部分のプレビュー"></canvas>
+        <div id="view3d" hidden></div>
+        <div class="empty" id="empty">PNG をここにドロップするか、右のパネルでシードを入力してください</div>
+        <div class="busy" id="busy" hidden><span class="spin"></span><span id="busyText">計算中…</span></div>
+        <div class="legend" id="legend" hidden><i class="sw a"></i>印刷される部分 <i class="sw b"></i>ブリッジ</div>
+      </div>
+      <p class="hint" id="message"></p>
+    </section>
+
+    <aside class="panel">
+      <h4>入力</h4>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/png,image/*" hidden>
+        <strong>PNG をドロップ</strong><span>またはクリックして選ぶ</span>
+      </label>
+      <div id="picker" hidden>
+        <canvas id="pick" width="360" height="360" aria-label="使う花を選ぶ"></canvas>
+        <label class="check"><input type="checkbox" id="grid3" checked> 3 × 3 の一枚絵として扱う（クリックで花を選ぶ）</label>
+        <p class="hint" id="imgInfo"></p>
+        <button id="useSeed" class="primary" hidden>この PNG のシードで高精度に作り直す</button>
+      </div>
+
+      <div class="seedrow">
+        <label class="field">シード（12 桁）<input type="text" id="seed" inputmode="numeric" pattern="[0-9]*" placeholder="011291810887" autocomplete="off" spellcheck="false"></label>
+        <label class="field">花<select id="flower">
+          <option value="0">1</option><option value="1">2</option><option value="2" selected>3</option>
+          <option value="3">4</option><option value="4">5</option><option value="5">6</option>
+          <option value="6">7</option><option value="7">8</option><option value="8">9</option>
+        </select></label>
+      </div>
+      <div class="flower-map" aria-hidden="true">花の番号は左上から右へ 1 2 3 / 4 5 6 / 7 8 9</div>
+      <label class="field">点の数
+        <select id="points">
+          <option value="30000000" selected>3,000 万（標準・数秒）</option>
+          <option value="100000000">1 億</option>
+          <option value="300000000">3 億（最高・十数秒）</option>
+        </select>
+      </label>
+      <button id="runSeed">シードから作る</button>
+
+      <h4>形</h4>
+      <div id="sliders"></div>
+      <label class="check"><input type="checkbox" id="bridges" checked> 離れた部分をブリッジでつなぐ</label>
+      <label class="check"><input type="checkbox" id="symmetric" checked> ブリッジを n 回対称に複製する</label>
+      <label class="sl"><span>対称数</span><select id="nsel"><option value="0">自動</option></select><output id="nOut">–</output></label>
+      <button id="reset">既定値に戻す</button>
+
+      <h4>出力</h4>
+      <dl class="stats" id="stats"><dt>外径</dt><dd>–</dd><dt>高さ</dt><dd>–</dd><dt>重さの目安</dt><dd>–</dd><dt>三角形</dt><dd>–</dd></dl>
+      <button id="save" class="primary" disabled>STL を保存</button>
+      <p class="hint">重さは充填 100% の PLA（1.24 g/cm³）としての目安です。</p>
+    </aside>
+  </div>
+
+  <footer>
+    <a href="../2d-v2.html">← Order&amp;Chaos 2D ver.2 へ</a>　花の写像・シード・色は 2D ver.2 と同じ計算です。
+  </footer>
+</main>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="js/flower-core.js"></script>
+<script src="js/pipeline.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

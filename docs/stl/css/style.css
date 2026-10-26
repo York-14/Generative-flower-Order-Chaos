@@ -1,0 +1,104 @@
+/* Order&Chaos 2D ver.2 と同じ配色・部品 */
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1c1b22; --muted: #5d5a68;
+  --border: #e4e1da; --accent: #b4366b; --code-bg: #f2efe9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+    --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b10; --surface: #15141c; --text: #ece9f2; --muted: #a29fb0;
+  --border: #2a2834; --accent: #f07aa8; --code-bg: #1d1c26;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.75 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: clamp(1.6rem, 4.4vw, 2.3rem); line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+.lead { color: var(--muted); font-size: 1.02rem; margin: 0 0 20px; }
+a { color: var(--accent); }
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+@media (max-width: 820px) { .studio { grid-template-columns: 1fr; } }
+
+.view-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.tab {
+  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+}
+.tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stage { position: relative; background: #0b0b10; border-radius: 12px; overflow: hidden; aspect-ratio: 1; }
+.stage.dragover { outline: 2px dashed var(--accent); outline-offset: -8px; }
+#view2d, #view3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#view3d canvas { display: block; width: 100% !important; height: 100% !important; }
+.empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 24px; color: #8f8c9c; font-size: 14px; pointer-events: none;
+}
+.busy {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center;
+  background: rgba(21, 20, 28, .85); color: #ece9f2; font-size: 13px; padding: 6px 12px; border-radius: 999px;
+}
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #f07aa8; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.legend { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: #b5b2c2; display: flex; gap: 6px; align-items: center; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 8px; }
+.sw.a { background: #8ecaff; margin-left: 0; } .sw.b { background: #f47298; }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.panel h4 { margin: 18px 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+.panel h4:first-child { margin-top: 0; }
+.panel label.sl { display: grid; grid-template-columns: 70px 1fr 54px; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
+.panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.panel output { font-family: ui-monospace, monospace; font-size: 12px; text-align: right; color: var(--muted); }
+.panel select, .panel button, .panel input[type=text] {
+  width: 100%; font: inherit; font-size: 14px; padding: 7px 10px; margin-top: 4px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.panel button { margin-top: 8px; cursor: pointer; }
+.panel button:disabled { opacity: .45; cursor: default; }
+.panel button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.panel label.sl select { margin: 0; padding: 4px 6px; font-size: 13px; }
+.panel input[type=text] { font: 13px ui-monospace, monospace; }
+.field { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
+.seedrow { display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: 8px; }
+.flower-map { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.drop {
+  display: flex; flex-direction: column; align-items: center; gap: 0; padding: 14px; margin-top: 6px;
+  border: 1.5px dashed var(--border); border-radius: 10px; cursor: pointer; text-align: center; font-size: 13px; color: var(--muted);
+}
+.drop strong { color: var(--text); font-size: 14px; }
+.drop:hover, .drop.dragover { border-color: var(--accent); }
+#picker { margin-top: 10px; }
+#pick { width: 100%; aspect-ratio: 1; border-radius: 8px; display: block; background: #0b0b10; cursor: pointer; }
+.panel .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 8px; line-height: 1.5; }
+.panel .check input { accent-color: var(--accent); margin-top: 3px; }
+.stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 0; font-size: 13px; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; text-align: right; font-family: ui-monospace, monospace; font-size: 12px; }
+.hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.hint.error { color: var(--accent); }
+footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
+
+/* スマホ：プレビューを上に固定して、スライダーを動かしながら見えるように */
+@media (max-width: 820px) {
+  main { padding-top: 16px; }
+  h1 { font-size: 1.45rem; }
+  .lead { font-size: .92rem; margin-bottom: 10px; }
+  .views { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 6px 0 4px; }
+  .stage { width: min(100%, 36vh); margin: 0 auto; }
+  .legend { font-size: 10px; left: 8px; bottom: 4px; }
+  .view-tabs { justify-content: center; margin-bottom: 4px; }
+  .tab { padding: 2px 12px; }
+  #message { font-size: 12px; margin-top: 4px; }
+  #message:not(.error) { display: none; }
+  .panel label.sl { grid-template-columns: 64px 1fr 48px; margin: 10px 0; }
+  .panel input[type=range] { height: 28px; }
+  .panel select, .panel button, .panel input[type=text] { font-size: 16px; }   /* iOS の自動ズームを防ぐ */
+  #pick { width: min(100%, 300px); margin: 0 auto; }
+}
